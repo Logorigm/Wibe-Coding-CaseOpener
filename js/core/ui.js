@@ -307,10 +307,15 @@ ${o.chance != null ? `<span class="cchance">${U.pct(o.chance)}</span>` : ''}
   };
 
   /* ======================= Новый уровень ======================= */
-  ui.levelUp = (level, reward) => {
+  // gained — список полученных уровней (если за раз прыгнули на несколько)
+  ui.levelUp = (level, reward, gained) => {
+    gained = gained && gained.length ? gained : [level];
+    const unlocked = App.data.cases.filter((cs) => !cs.hidden && cs.requiredLevel > 1 && gained.includes(cs.requiredLevel));
     ui.whenIdle(() => {
       App.sfx.play('levelup');
       App.fx.confetti({ count: 160 });
+      const rtp = (cs) => (App.views && App.views.rtp ? App.views.rtp(cs) : null);
+      const main = unlocked.slice().sort((a, b) => App.data.priceInCoins(b) - App.data.priceInCoins(a))[0];
       ui.modal({
         cls: 'levelup-modal',
         size: 'sm',
@@ -320,8 +325,26 @@ ${o.chance != null ? `<span class="cchance">${U.pct(o.chance)}</span>` : ''}
           <h2>Новый уровень!</h2>
           <div class="muted">Титул: <b class="grad-text">${esc(App.eco.title(level))}</b></div>
           <div class="lvlup-reward">${ui.reward(reward)}</div>
+          ${unlocked.length
+            ? `<div class="lvlup-unlock">
+                <div class="lvlup-unlock-title">🔓 ${unlocked.length > 1 ? 'Открыты новые кейсы' : 'Открыт новый кейс'}</div>
+                ${unlocked
+                  .map(
+                    (cs) => `<a class="lvlup-case" href="#/case/${esc(cs.id)}" data-close style="--cc:${esc(cs.color)}">
+                      ${ui.caseImg(cs)}
+                      <div><b>${esc(cs.name)}</b><small>${cs.price > 0 ? ui.cur(cs.price, cs.currency) : 'Бесплатно'}${rtp(cs) != null ? ` · отдача <b class="good">${rtp(cs)}%</b>` : ''}</small></div>
+                    </a>`
+                  )
+                  .join('')}
+              </div>`
+            : ''}
         </div>`,
-        actions: [{ label: 'Ура! 🎉', cls: 'btn-primary btn-block' }],
+        actions: main
+          ? [
+              { label: 'Позже', cls: 'btn-ghost' },
+              { label: 'К новому кейсу 🎁', cls: 'btn-primary', onClick: () => App.router.go('case/' + main.id) },
+            ]
+          : [{ label: 'Ура! 🎉', cls: 'btn-primary btn-block' }],
       });
     });
   };

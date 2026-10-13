@@ -51,6 +51,8 @@
       limits: {},
       lastBets: {},
       collectionClaims: {},
+      collectionMilestones: {},
+      jackpot: null,
       welcomed: false,
     };
   }

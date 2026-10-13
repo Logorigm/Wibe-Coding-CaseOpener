@@ -182,14 +182,40 @@
       const have = cs.pool.reduce((n, e) => n + (inv.discovered(e.cid) ? 1 : 0), 0);
       return { have, total, pct: total ? have / total : 0, done: total > 0 && have === total };
     },
+    // Награда за полную коллекцию кейса: своя (collectionReward) или по цене и уровню кейса
     reward(cs) {
       if (cs.collectionReward) return cs.collectionReward;
-      if (cs.currency === 'gems') return { gems: Math.max(5, cs.price * 3) };
-      return { coins: Math.max(500, cs.price * 8) };
+      if (cs.currency === 'gems' || !cs.price) return { gems: 30 };
+      const coins = cs.price * 10;
+      return { coins: coins >= 1000 ? Math.round(coins / 100) * 100 : coins, gems: 5 + cs.requiredLevel * 2 };
     },
     claimed: (cs) => !!App.state.collectionClaims[cs.id],
     claimable() {
-      return App.data.cases.filter((cs) => !App.collection.claimed(cs) && App.collection.caseProgress(cs).done);
+      return App.data.cases.filter((cs) => !cs.hidden && !App.collection.claimed(cs) && App.collection.caseProgress(cs).done);
+    },
+    /* ---- общий прогресс: все, кого ты хоть раз выбивал ---- */
+    total() {
+      const all = App.data.chars.filter((c) => c.inCases.length);
+      const have = all.filter((c) => inv.discovered(c.id)).length;
+      return { have, total: all.length, pct: all.length ? (have / all.length) * 100 : 0 };
+    },
+    milestones() {
+      const list = (GAME_DATA.config.collection && GAME_DATA.config.collection.milestones) || [];
+      const pct = App.collection.total().pct;
+      const got = App.state.collectionMilestones || {};
+      return list.map((m) => ({ pct: m.pct, reward: m.reward, done: pct >= m.pct - 1e-9, claimed: !!got[m.pct] }));
+    },
+    claimMilestone(pct) {
+      const m = App.collection.milestones().find((x) => x.pct === pct);
+      if (!m || !m.done || m.claimed) return;
+      App.state.collectionMilestones = App.state.collectionMilestones || {};
+      App.state.collectionMilestones[pct] = Date.now();
+      App.eco.grant(m.reward, 'collection', { title: `Собрано ${pct}% коллекции!` });
+      App.fx.confetti();
+      App.bus.emit('badges');
+    },
+    claimableCount() {
+      return App.collection.claimable().length + App.collection.milestones().filter((m) => m.done && !m.claimed).length;
     },
     claim(cs) {
       if (App.collection.claimed(cs) || !App.collection.caseProgress(cs).done) return;

@@ -1,0 +1,78 @@
+plugins {
+    id 'com.android.application'
+}
+
+// Корень репозитория, где лежит сама игра (android/..)
+def webRoot = rootProject.projectDir.parentFile
+// Куда складываем копию игры перед упаковкой в APK (попадёт в assets/www)
+def webOutDir = layout.buildDirectory.dir('generated/web').get().asFile
+
+// Версию передаёт сборка на GitHub: -PversionCode=12 -PversionName=1.0.12
+def appVersionCode = (project.findProperty('versionCode') ?: '1').toString().toInteger()
+def appVersionName = (project.findProperty('versionName') ?: '1.0').toString()
+
+android {
+    namespace 'com.waifudrop.app'
+    compileSdk 35
+
+    defaultConfig {
+        applicationId 'com.waifudrop.app'
+        minSdk 26
+        targetSdk 35
+        versionCode appVersionCode
+        versionName appVersionName
+    }
+
+    // Подпись APK. Ключ лежит в репозитории, чтобы каждая новая версия ставилась поверх старой.
+    // Для Google Play сделай свой ключ и передай его через переменные окружения
+    // WAIFUDROP_KEYSTORE / WAIFUDROP_STORE_PASSWORD / WAIFUDROP_KEY_ALIAS / WAIFUDROP_KEY_PASSWORD.
+    signingConfigs {
+        release {
+            storeFile file(System.getenv('WAIFUDROP_KEYSTORE') ?: 'waifudrop.keystore')
+            storePassword System.getenv('WAIFUDROP_STORE_PASSWORD') ?: 'waifudrop'
+            keyAlias System.getenv('WAIFUDROP_KEY_ALIAS') ?: 'waifudrop'
+            keyPassword System.getenv('WAIFUDROP_KEY_PASSWORD') ?: 'waifudrop'
+        }
+    }
+
+    buildTypes {
+        release {
+            minifyEnabled false
+            signingConfig signingConfigs.release
+        }
+    }
+
+    compileOptions {
+        sourceCompatibility JavaVersion.VERSION_17
+        targetCompatibility JavaVersion.VERSION_17
+    }
+
+    lint {
+        checkReleaseBuilds false
+        abortOnError false
+    }
+
+    sourceSets {
+        main {
+            assets.srcDir webOutDir
+        }
+    }
+}
+
+dependencies {
+    implementation 'androidx.webkit:webkit:1.11.0'
+}
+
+// Копируем игру в assets/www перед каждой сборкой
+def copyWeb = tasks.register('copyWeb', Sync) {
+    description = 'Копирует файлы игры в assets/www'
+    from(webRoot) {
+        include 'index.html', 'css/**', 'js/**', 'data/**', 'assets/**', 'characters/**'
+        exclude '**/*.md', '**/*.txt', '**/.gitkeep', '**/.DS_Store', '**/Thumbs.db'
+    }
+    into new File(webOutDir, 'www')
+}
+
+tasks.named('preBuild') {
+    dependsOn copyWeb
+}

@@ -13,7 +13,7 @@
         { id: 'home', icon: '🏠', label: 'Главная' },
         { id: 'cases', icon: '🎁', label: 'Кейсы' },
         { id: 'battles', icon: '⚔️', label: 'Батлы', unlock: 'battles' },
-        { id: 'upgrade', icon: '🆙', label: 'Апгрейд', unlock: 'upgrade' },
+        { id: 'upgrade', icon: '🆙', label: 'Апгрейдер', unlock: 'upgrade' },
         { id: 'contracts', icon: '📜', label: 'Контракты', unlock: 'contracts' },
         { id: 'games', icon: '🎮', label: 'Мини-игры' },
       ],

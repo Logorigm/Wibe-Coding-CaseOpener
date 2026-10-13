@@ -1,0 +1,69 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Цветок сакуры: 5 лепестков вокруг центра (иконка 108×108, видимая зона ~66×66 в центре) -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+    <group
+        android:pivotX="54"
+        android:pivotY="54"
+        android:rotation="0">
+        <path
+            android:fillColor="#FFFFF1F7"
+            android:pathData="M54,54 C45.5,47 42.5,35.5 48.5,29 L54,33.5 L59.5,29 C65.5,35.5 62.5,47 54,54 Z" />
+        <path
+            android:fillColor="#FFFFB8D9"
+            android:pathData="M54,52 C51,47 50.5,42 52.5,38.5 L54,40 L55.5,38.5 C57.5,42 57,47 54,52 Z" />
+    </group>
+    <group
+        android:pivotX="54"
+        android:pivotY="54"
+        android:rotation="72">
+        <path
+            android:fillColor="#FFFFF1F7"
+            android:pathData="M54,54 C45.5,47 42.5,35.5 48.5,29 L54,33.5 L59.5,29 C65.5,35.5 62.5,47 54,54 Z" />
+        <path
+            android:fillColor="#FFFFB8D9"
+            android:pathData="M54,52 C51,47 50.5,42 52.5,38.5 L54,40 L55.5,38.5 C57.5,42 57,47 54,52 Z" />
+    </group>
+    <group
+        android:pivotX="54"
+        android:pivotY="54"
+        android:rotation="144">
+        <path
+            android:fillColor="#FFFFF1F7"
+            android:pathData="M54,54 C45.5,47 42.5,35.5 48.5,29 L54,33.5 L59.5,29 C65.5,35.5 62.5,47 54,54 Z" />
+        <path
+            android:fillColor="#FFFFB8D9"
+            android:pathData="M54,52 C51,47 50.5,42 52.5,38.5 L54,40 L55.5,38.5 C57.5,42 57,47 54,52 Z" />
+    </group>
+    <group
+        android:pivotX="54"
+        android:pivotY="54"
+        android:rotation="216">
+        <path
+            android:fillColor="#FFFFF1F7"
+            android:pathData="M54,54 C45.5,47 42.5,35.5 48.5,29 L54,33.5 L59.5,29 C65.5,35.5 62.5,47 54,54 Z" />
+        <path
+            android:fillColor="#FFFFB8D9"
+            android:pathData="M54,52 C51,47 50.5,42 52.5,38.5 L54,40 L55.5,38.5 C57.5,42 57,47 54,52 Z" />
+    </group>
+    <group
+        android:pivotX="54"
+        android:pivotY="54"
+        android:rotation="288">
+        <path
+            android:fillColor="#FFFFF1F7"
+            android:pathData="M54,54 C45.5,47 42.5,35.5 48.5,29 L54,33.5 L59.5,29 C65.5,35.5 62.5,47 54,54 Z" />
+        <path
+            android:fillColor="#FFFFB8D9"
+            android:pathData="M54,52 C51,47 50.5,42 52.5,38.5 L54,40 L55.5,38.5 C57.5,42 57,47 54,52 Z" />
+    </group>
+    <path
+        android:fillColor="#FFFF4FA3"
+        android:pathData="M54,48.5 A5.5,5.5 0 1,1 53.99,48.5 Z" />
+    <path
+        android:fillColor="#FFFFE58A"
+        android:pathData="M54,51.5 A2.5,2.5 0 1,1 53.99,51.5 Z" />
+</vector>

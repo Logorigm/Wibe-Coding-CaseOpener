@@ -3,6 +3,7 @@
  *  ----------------------------------------------------------------------------
  *  stat — какую статистику считаем, goal — сколько нужно, reward — награда.
  *  hidden: true — достижение скрыто, пока не получено.
+ *  game: 'crash' — достижение мини-игры (не показывается, если игра выключена в config.games.enabled).
  *
  *  Доступные stat:
  *    casesOpened, itemsObtained, shinyObtained, rareOrBetter,
@@ -10,7 +11,8 @@
  *    uniqueCharacters, collectionPercent, level, maxCoins,
  *    itemsSold, itemsDusted, crafted, contractsDone, upgradesDone, upgradesWon,
  *    battlesPlayed, battlesWon, gamesPlayed, gamesWon, biggestWin, loseStreakMax,
- *    crashBest, minesBest, game_<id>_played / game_<id>_won (например game_memory_won),
+ *    crashBest, minesBest, jackpotsWon, rouletteStars, coinflipStreakMax,
+ *    game_<id>_played / game_<id>_won (например game_roulette_played),
  *    dailyStreakMax, questsDone, promoUsed, spentOnCases, case_<id> (открытия кейса)
  * ========================================================================== */
 window.GAME_DATA = window.GAME_DATA || {};
@@ -50,10 +52,15 @@ GAME_DATA.achievements = [
   { id: 'games_10',   icon: '🎮', name: 'Игроман',     desc: 'Сыграй 10 раз в мини-игры',             stat: 'gamesPlayed', goal: 10,    reward: { coins: 300 } },
   { id: 'games_100',  icon: '🕹️', name: 'Задрот',      desc: 'Сыграй 100 раз в мини-игры',            stat: 'gamesPlayed', goal: 100,   reward: { gems: 15 } },
   { id: 'wins_50',    icon: '🏅', name: 'Везунчик',    desc: 'Выиграй 50 раз в мини-играх',            stat: 'gamesWon',    goal: 50,    reward: { gems: 15 } },
-  { id: 'crash_10',   icon: '🚀', name: 'До луны!',    desc: 'Забери ×10 или больше в «Ракете»',       stat: 'crashBest',   goal: 10,    reward: { gems: 20 } },
-  { id: 'mines_15',   icon: '💣', name: 'Сапёр',       desc: 'Открой 15 безопасных клеток за раунд в «Минах»', stat: 'minesBest', goal: 15, reward: { gems: 20 } },
+  { id: 'crash_10',   icon: '🚀', name: 'До луны!',    desc: 'Забери ×10 или больше в «Краше»',        stat: 'crashBest',   goal: 10,    reward: { gems: 20 }, game: 'crash' },
+  { id: 'mines_15',   icon: '💣', name: 'Сапёр',       desc: 'Открой 15 безопасных клеток за раунд в «Минах»', stat: 'minesBest', goal: 15, reward: { gems: 20 }, game: 'mines' },
   { id: 'bigwin',     icon: '💰', name: 'Куш!',        desc: 'Выиграй 10 000 монет за одну игру',      stat: 'biggestWin',  goal: 10000, reward: { gems: 25 } },
-  { id: 'memory_10',  icon: '🧠', name: 'Мозг',        desc: 'Пройди «Мемори» 10 раз',                 stat: 'game_memory_won', goal: 10, reward: { coins: 700 } },
+  { id: 'memory_10',  icon: '🧠', name: 'Мозг',        desc: 'Пройди «Мемори» 10 раз',                 stat: 'game_memory_won', goal: 10, reward: { coins: 700 }, game: 'memory' },
+  { id: 'jackpot_1',  icon: '🎰', name: 'ДЖЕКПОТ!',    desc: 'Сорви джекпот: три короны в «Джекпоте»', stat: 'jackpotsWon', goal: 1,     reward: { gems: 50 }, game: 'jackpot' },
+  { id: 'jackpot_100',icon: '🍒', name: 'Однорукий друг', desc: 'Сделай 100 спинов в «Джекпоте»',     stat: 'game_jackpot_played', goal: 100, reward: { gems: 10 }, game: 'jackpot' },
+  { id: 'roulette_star', icon: '⭐', name: 'Звездопад', desc: 'Выиграй на «Звезде» (×14) в Рулетке',   stat: 'rouletteStars', goal: 1,  reward: { gems: 15 }, game: 'roulette' },
+  { id: 'roulette_50',icon: '🎡', name: 'Завсегдатай', desc: 'Сыграй 50 раундов в Рулетке',           stat: 'game_roulette_played', goal: 50, reward: { gems: 10 }, game: 'roulette' },
+  { id: 'coinflip_5', icon: '🌗', name: 'Пять из пяти', desc: 'Выиграй 5 раз подряд в Коинфлипе',      stat: 'coinflipStreakMax', goal: 5, reward: { gems: 15 }, game: 'coinflip' },
 
   // Батлы, апгрейды, контракты
   { id: 'battle_1',   icon: '⚔️', name: 'Боевое крещение', desc: 'Победи в батле кейсов',       stat: 'battlesWon',    goal: 1,  reward: { coins: 500 } },

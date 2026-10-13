@@ -56,7 +56,7 @@
                   <div class="quest-body">
                     <div class="quest-text">${esc(q.text)}</div>
                     ${ui.bar(q.progress / q.goal.n)}
-                    <div class="quest-meta"><span class="muted small">${U.fmt(q.progress)} / ${U.fmt(q.goal.n)}</span>${ui.reward(q.goal.reward)}</div>
+                    <div class="quest-meta"><span class="muted small">${U.fmt(q.progress)} / ${U.fmt(q.goal.n)}</span>${ui.reward(q.reward)}</div>
                   </div>
                   ${q.claimed ? '<span class="tag tag-good">✓ Готово</span>' : `<button class="btn ${q.done ? 'btn-gold' : 'btn-ghost'}" data-quest="${q.index}" ${q.done ? '' : 'disabled'}>${q.done ? 'Забрать' : 'В процессе'}</button>`}
                 </div>`
@@ -64,7 +64,7 @@
               .join('')}</div>
             <div class="quest-bonus panel${allDone && !bonusClaimed ? ' ready' : ''}">
               <div class="qb-ico">🎉</div>
-              <div class="quest-body"><div class="quest-text">Бонус за все задания дня</div><div>${ui.reward(bonus)}</div></div>
+              <div class="quest-body"><div class="quest-text">Бонус за все задания дня</div><div>${ui.reward(App.eco.scaled(bonus))}</div></div>
               ${bonusClaimed ? '<span class="tag tag-good">✓ Получено</span>' : `<button class="btn ${allDone ? 'btn-gold' : 'btn-ghost'}" data-act="bonus" ${allDone ? '' : 'disabled'}>${allDone ? 'Забрать' : `${quests.filter((q) => q.claimed).length}/${quests.length}`}</button>`}
             </div>
           </section>`;

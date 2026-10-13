@@ -126,8 +126,14 @@
 .case-timer { color: var(--muted); font-weight: 800; font-variant-numeric: tabular-nums; }
 .case-badge { position: absolute; top: 12px; left: 12px; z-index: 2; padding: 3px 10px; border-radius: 999px; font-size: 11px; font-weight: 900; letter-spacing: 0.04em; background: var(--cc); color: #fff; box-shadow: 0 4px 14px -2px var(--cc); }
 .case-tickets { position: absolute; top: 12px; right: 12px; z-index: 2; padding: 3px 9px; border-radius: 999px; font-size: 12px; font-weight: 900; background: rgba(0, 0, 0, 0.55); border: 1px solid var(--line2); }
+.case-lvl { position: absolute; top: 12px; left: 12px; z-index: 2; padding: 3px 9px; border-radius: 999px; font-size: 11px; font-weight: 900; background: rgba(0, 0, 0, 0.5); border: 1px solid color-mix(in srgb, var(--cc) 60%, transparent); color: #fff; }
+.case-meta { position: relative; display: flex; justify-content: center; gap: 10px; flex-wrap: wrap; color: var(--muted); font-size: 12px; font-weight: 800; margin: 3px 0 8px; }
+.case-rtp { color: #a7f3d0; }
+.case-best { position: relative; margin-top: 3px; font-size: 11px; font-weight: 900; letter-spacing: 0.03em; color: #fde68a; }
+.case-card.best { border-color: rgba(251, 191, 36, 0.65); box-shadow: 0 0 0 1px rgba(251, 191, 36, 0.35), 0 18px 40px -20px rgba(251, 191, 36, 0.9); }
+.case-card.best .case-price { border-color: rgba(251, 191, 36, 0.6); }
 .case-card.locked .case-art, .case-card.locked .case-name, .case-card.locked .case-price { filter: grayscale(0.8) brightness(0.6); }
-.case-lock { position: absolute; inset: 0; z-index: 3; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 4px; background: rgba(8, 6, 16, 0.45); font-weight: 900; font-size: 14px; }
+.case-lock { position: absolute; inset: 0; z-index: 3; display: flex; flex-direction: column; align-items: center; justify-content: flex-start; gap: 4px; padding-top: 22%; background: rgba(8, 6, 16, 0.45); font-weight: 900; font-size: 14px; text-shadow: 0 2px 8px rgba(0, 0, 0, 0.8); }
 .case-lock span { font-size: 34px; }
 .case-card.mini { padding: 12px 10px; }
 .case-card.mini .case-name { font-size: 13px; }
@@ -215,11 +221,12 @@
 /* ---------- аватары и рамки ---------- */
 .avatar {
   --av: 40px; position: relative; width: var(--av); height: var(--av); border-radius: 50%; flex: none;
-  display: grid; place-items: center; background: linear-gradient(135deg, var(--accent), var(--accent2));
+  display: grid; grid-template: minmax(0, 1fr) / minmax(0, 1fr); place-items: center; background: linear-gradient(135deg, var(--accent), var(--accent2));
   border: 2px solid rgba(255, 255, 255, 0.15);
 }
 .avatar img { width: 100%; height: 100%; border-radius: 50%; object-fit: cover; object-position: 50% 22%; }
 .avatar-letter { font: 900 calc(var(--av) * 0.42) var(--display); color: #fff; }
+.avatar.xs { --av: 24px; border-width: 1px; }
 .avatar.sm { --av: 40px; }
 .avatar.md { --av: 48px; }
 .avatar.lg { --av: 84px; }
@@ -247,6 +254,17 @@
 .lvlup-badge { position: relative; width: 116px; height: 116px; margin: 0 auto; display: grid; place-items: center; border-radius: 32px; transform: rotate(45deg); background: linear-gradient(135deg, var(--accent), var(--accent2)); box-shadow: 0 0 50px rgba(var(--accent-rgb), 0.9), inset 0 0 0 4px rgba(255, 255, 255, 0.25); animation: newPop 0.7s cubic-bezier(0.2, 0.9, 0.3, 1.6) both; }
 .lvlup-badge span { transform: rotate(-45deg); font: 900 46px var(--display); }
 .lvlup-reward { position: relative; margin-top: 14px; display: flex; justify-content: center; }
+.lvlup-unlock { position: relative; margin-top: 16px; display: flex; flex-direction: column; gap: 8px; }
+.lvlup-unlock-title { font-weight: 900; font-size: 14px; color: #fde68a; }
+.lvlup-case {
+  --cc: var(--accent); display: flex; align-items: center; gap: 12px; padding: 8px 12px; border-radius: 14px; text-align: left; color: var(--text);
+  background: linear-gradient(90deg, color-mix(in srgb, var(--cc) 25%, transparent), rgba(255, 255, 255, 0.03)); border: 1px solid color-mix(in srgb, var(--cc) 55%, transparent);
+  animation: newPop 0.6s 0.25s cubic-bezier(0.2, 0.9, 0.3, 1.6) both;
+}
+.lvlup-case:hover { border-color: var(--cc); }
+.lvlup-case img { width: 56px; height: 56px; object-fit: contain; flex: none; filter: drop-shadow(0 6px 10px rgba(0, 0, 0, 0.45)); }
+.lvlup-case div { display: flex; flex-direction: column; gap: 2px; }
+.lvlup-case small { color: var(--muted); font-size: 12.5px; }
 
 /* ---------- приветствие ---------- */
 .welcome { text-align: center; }

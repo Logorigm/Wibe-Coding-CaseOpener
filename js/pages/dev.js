@@ -18,10 +18,11 @@
   // черновики форм живут, пока открыта вкладка браузера
   const draft = {
     ch: { name: '', id: '', idTouched: false, rarity: 'rare', series: '', description: '', image: '', value: '', cases: [], look: { hair: '#ff9ecf', eyes: '#3b82f6', skin: '#ffe9de', outfit: '#1e293b', accent: '#ec4899', style: 'long', acc: 'none', clothes: 'sailor', mouth: 'smile', expr: 'normal' } },
-    cs: { name: '', id: '', idTouched: false, description: '', price: 300, currency: 'coins', color: '#ff6fb5', emblem: 'star', category: 'standard', badge: '', requiredLevel: 1, cooldown: '', image: '', featured: false, items: [], weights: {}, pityCount: '', pityRarity: 'legendary' },
+    cs: { name: '', id: '', idTouched: false, description: '', price: 300, rtp: 90, currency: 'coins', color: '#ff6fb5', emblem: 'star', category: 'standard', badge: '', requiredLevel: 1, cooldown: '', image: '', featured: false, items: [], weights: {}, pityCount: '', pityRarity: 'legendary' },
   };
 
   /* ============================== Проверка данных ============================== */
+  let showDemo = false;
   function renderCheck(host) {
     const warnings = App.data.warnings;
     const icon = { error: '❌', warn: '⚠️', info: 'ℹ️' };
@@ -41,26 +42,30 @@
       <section class="section">
         <div class="section-head"><h2>Кейсы: шансы и окупаемость</h2><span class="muted small">RTP — сколько в среднем возвращается игроку от цены кейса</span></div>
         <div class="panel table-wrap"><table class="table">
-          <thead><tr><th>Кейс</th><th>id</th><th>Цена</th><th>Персонажей</th><th>Средний дроп</th><th>RTP</th><th>Гарант</th></tr></thead>
+          <thead><tr><th>Ур.</th><th>Кейс</th><th>id</th><th>Цена</th><th>Персонажей</th><th>Средний дроп</th><th>RTP (цель)</th><th>RTP (факт)</th><th>Гарант</th></tr></thead>
           <tbody>${App.data.cases
+            .slice()
+            .sort((a, b) => a.requiredLevel - b.requiredLevel || App.data.priceInCoins(a) - App.data.priceInCoins(b))
             .map((cs) => {
               const ev = App.data.caseEV(cs);
               const rtp = App.data.caseRTP(cs);
-              const cls = rtp == null ? '' : rtp > 1 ? 'bad' : rtp >= 0.85 ? 'good' : 'warn';
-              return `<tr data-goto="case/${esc(cs.id)}"><td><b>${esc(cs.name)}</b></td><td><code>${esc(cs.id)}</code></td><td>${cs.price ? ui.cur(cs.price, cs.currency) : 'бесплатно'}</td><td>${cs.pool.length}</td><td>${ui.cur(Math.round(ev))}</td><td class="${cls}">${rtp == null ? '—' : U.pct(rtp, 1)}</td><td>${cs.pity ? `${cs.pity.count} → ${esc(cs.pity.rarity)}` : '—'}</td></tr>`;
+              const cls = rtp == null ? '' : rtp > 1 ? 'bad' : rtp >= 0.8 ? 'good' : 'warn';
+              return `<tr data-goto="case/${esc(cs.id)}"><td>${cs.requiredLevel}</td><td><b>${esc(cs.name)}</b>${cs.demo ? ' <span class="tag">демо</span>' : ''}</td><td><code>${esc(cs.id)}</code></td><td>${cs.price ? ui.cur(cs.price, cs.currency) : 'бесплатно'}</td><td>${cs.pool.length}</td><td>${ui.cur(Math.round(ev))}</td><td>${cs.price ? U.pct(cs.rtp, 1) : '—'}</td><td class="${cls}">${rtp == null ? '—' : U.pct(rtp, 1)}</td><td>${cs.pity ? `${cs.pity.count} → ${esc(cs.pity.rarity)}` : '—'}</td></tr>`;
             })
             .join('')}</tbody></table></div>
-        <p class="small muted">RTP больше 100% — кейс выгоден игроку (можно бесконечно фармить). Обычно ставят 85–97%. Подбирай <code>price</code> или <code>rarityWeights</code>.</p>
+        <p class="small muted">RTP — окупаемость: какая доля цены кейса в среднем возвращается игроку. Цены персонажей подгоняются под RTP (цель) автоматически. Если факт отличается — у кого-то из персонажей задана своя <code>value</code> или персонаж «домашний» в другом кейсе.</p>
       </section>
       <section class="section">
         <div class="section-head"><h2>Персонажи</h2><button class="btn btn-ghost btn-sm" data-act="checkimg">🖼️ Проверить картинки</button></div>
         <div class="panel table-wrap"><table class="table">
-          <thead><tr><th></th><th>Имя</th><th>id</th><th>Редкость</th><th>Цена</th><th>Кейсы</th><th>Картинка</th></tr></thead>
+          <thead><tr><th></th><th>Имя</th><th>id</th><th>Редкость</th><th>Цена</th><th>Кейсы</th><th>Откуда</th><th>Картинка</th></tr></thead>
           <tbody>${App.data.chars
+            .filter((c) => showDemo || !c.demo)
             .map(
-              (c) => `<tr class="r-${c.rarity}"><td><img class="tbl-ava" src="${esc(App.art.portrait(c))}" data-cid="${esc(c.id)}" alt=""></td><td><b>${esc(c.name)}</b></td><td><code>${esc(c.id)}</code></td><td><span class="rtag r-${c.rarity}">${esc(c.r.name)}</span></td><td>${U.fmt(c.value)}</td><td>${c.inCases.length ? c.inCases.map((k) => `<code>${esc(k)}</code>`).join(' ') : '<span class="warn">нет</span>'}</td><td data-img="${esc(c.id)}">${c.image ? `<span class="muted">${esc(c.image)}</span>` : '🎨 нарисована'}</td></tr>`
+              (c) => `<tr class="r-${c.rarity}"><td><img class="tbl-ava" src="${esc(App.art.portrait(c))}" data-cid="${esc(c.id)}" alt=""></td><td><b>${esc(c.name)}</b></td><td><code>${esc(c.id)}</code></td><td><span class="rtag r-${c.rarity}">${esc(c.r.name)}</span></td><td>${U.fmt(c.value)}${c.fixedValue != null ? ' <small class="muted">своя</small>' : ''}</td><td>${c.inCases.length ? c.inCases.map((k) => `<code${k === c.home ? ' title="домашний кейс — от него считается цена"' : ''}>${k === c.home ? '🏠' : ''}${esc(k)}</code>`).join(' ') : '<span class="warn">нет</span>'}</td><td>${{ manual: 'characters.js', folder: '📁 папка', demo: '<span class="muted">демо</span>' }[c._source] || ''}</td><td data-img="${esc(c.id)}">${c.image ? `<span class="muted">${esc(decodeURIComponent(c.image))}</span>` : '🎨 нарисована'}</td></tr>`
             )
             .join('')}</tbody></table></div>
+        <label class="switch-row mt"><input type="checkbox" data-act="toggledemo"${showDemo ? ' checked' : ''}><span class="switch"></span>Показывать демо-персонажей (${App.data.chars.filter((c) => c.demo).length})</label>
       </section>`;
   }
   function checkImages(host) {
@@ -106,8 +111,10 @@
     const r = App.data.getRarity(o.rarity) || App.data.rarities[0];
     const fake = { id: o.id, rarity: r.id, r, look: o.look || {} };
     const src = o.image || svgUri(App.art.svg.portrait(fake));
-    const value = o.value != null ? o.value : r.value;
-    return `<div class="ccard r-${r.id} t${r.index} lg${r.rainbow ? ' rainbow' : ''}"><div class="ccard-art"><img src="${esc(src)}" alt="" data-preview></div><div class="ccard-shine"></div><div class="ccard-info"><div class="ccard-name">${esc(o.name)}</div><div class="ccard-meta"><span class="ccard-rar">${esc(r.name)}</span><span class="ccard-val">${ui.cur(value, 'coins', { short: true })}</span></div></div></div>`;
+    const value = o.value != null ? o.value : App.data.estimateValue(o.cases && o.cases[0], r.id);
+    const cs = o.cases && App.data.getCase(o.cases[0]);
+    return `<div class="ccard r-${r.id} t${r.index} lg${r.rainbow ? ' rainbow' : ''}"><div class="ccard-art"><img src="${esc(src)}" alt="" data-preview></div><div class="ccard-shine"></div><div class="ccard-info"><div class="ccard-name">${esc(o.name)}</div><div class="ccard-meta"><span class="ccard-rar">${esc(r.name)}</span><span class="ccard-val">${ui.cur(value, 'coins', { short: true })}</span></div></div></div>
+      <div class="small muted center">${o.value != null ? 'Своя цена' : cs ? `Цена ≈ ${ui.cur(value)} — считается от кейса «${esc(cs.name)}» и редкости` : 'Выбери кейс — цена посчитается от него'}</div>`;
   }
   const opts = (list, cur) => list.map((v) => (Array.isArray(v) ? v : [v, v])).map(([v, l]) => `<option value="${esc(v)}"${String(v) === String(cur) ? ' selected' : ''}>${esc(l)}</option>`).join('');
 
@@ -127,8 +134,10 @@
             <label class="field span2"><span>Серия / тайтл</span><input class="input" data-c="series" value="${esc(d.series)}" list="dev-series" placeholder="Re:Zero"><datalist id="dev-series">${App.data.seriesList().map((s) => `<option value="${esc(s)}">`).join('')}</datalist></label>
             <label class="field span2"><span>Описание</span><textarea class="input" rows="2" data-c="description" placeholder="Пара строк о персонаже">${esc(d.description)}</textarea></label>
           </div>
-          <div class="field"><span>В какие кейсы добавить</span><div class="check-list">${App.data.cases
-            .map((cs) => `<label class="check"><input type="checkbox" data-ccase="${esc(cs.id)}"${d.cases.includes(cs.id) ? ' checked' : ''}><span>${esc(cs.name)}</span></label>`)
+          <div class="field"><span>В какой кейс положить (первый отмеченный — «домашний», от него считается цена)</span><div class="check-list">${App.data.cases
+            .slice()
+            .sort((a, b) => a.requiredLevel - b.requiredLevel || a.price - b.price)
+            .map((cs) => `<label class="check"><input type="checkbox" data-ccase="${esc(cs.id)}"${d.cases.includes(cs.id) ? ' checked' : ''}><span>${esc(cs.name)} <small class="muted">ур. ${cs.requiredLevel}${cs.demo ? ' · демо' : ''}</small></span></label>`)
             .join('')}</div></div>
           <details class="look-box"${d.image ? '' : ' open'}>
             <summary>🎨 Внешность заглушки (если нет картинки)</summary>
@@ -172,6 +181,7 @@
     if (d.description) o.description = d.description;
     o.price = Math.max(0, Number(d.price) || 0);
     o.currency = d.currency;
+    if (Number(d.rtp) > 0) o.rtp = Math.round(Number(d.rtp)) / 100;
     o.color = d.color;
     if (d.image) o.image = d.image;
     else o.emblem = d.emblem;
@@ -218,6 +228,7 @@
             <label class="field"><span>id (латиницей) *</span><input class="input" data-k="id" value="${esc(d.id)}" placeholder="neko2"></label>
             <label class="field"><span>Цена</span><input class="input" type="number" min="0" data-k="price" value="${esc(d.price)}"></label>
             <label class="field"><span>Валюта</span><select class="select" data-k="currency">${opts([['coins', 'Монеты'], ['gems', 'Кристаллы']], d.currency)}</select></label>
+            <label class="field"><span>Окупаемость, % (rtp)</span><input class="input" type="number" min="10" max="200" data-k="rtp" value="${esc(d.rtp)}"><small class="muted">Цены персонажей кейса подстроятся под неё</small></label>
             <label class="field"><span>Цвет</span><input type="color" class="color" data-k="color" value="${esc(d.color)}"></label>
             <label class="field"><span>Значок на коробке</span><select class="select" data-k="emblem">${opts(['star', 'heart', 'moon', 'paw', 'flower', 'crown', 'gem', 'fire'], d.emblem)}</select></label>
             <label class="field"><span>Категория</span><select class="select" data-k="category">${opts([['free', 'Бесплатные'], ['standard', 'Обычные'], ['theme', 'Тематические'], ['event', 'Ивенты'], ['premium', 'Премиум']], d.category)}</select></label>
@@ -267,12 +278,13 @@
     const art = o.image || svgUri(App.art.svg.caseBox(Object.assign({}, o, { emblem: o.emblem || 'star' })));
     let html = `<div class="case-card static" style="--cc:${esc(o.color)}"><span class="case-glow"></span>${o.badge ? `<span class="case-badge">${esc(o.badge)}</span>` : ''}<div class="case-art"><img src="${esc(art)}" alt=""></div><div class="case-name">${esc(o.name)}</div><div class="case-price">${o.price ? ui.cur(o.price, o.currency) : '<span class="free-tag">Бесплатно</span>'}</div></div>`;
     if (cs && cs.pool.length) {
-      const ev = App.data.caseEV(cs);
-      const rtp = App.data.caseRTP(cs);
+      const ev = cs.previewEV || 0;
+      const priceCoins = App.data.priceInCoins(cs);
+      const rtp = priceCoins > 0 ? ev / priceCoins : null;
       html += `<div class="prev-stats"><div>Средний дроп: <b>${ui.cur(Math.round(ev))}</b></div><div>RTP: <b class="${rtp == null ? '' : rtp > 1 ? 'bad' : rtp >= 0.85 ? 'good' : 'warn'}">${rtp == null ? '—' : U.pct(rtp, 1)}</b></div></div>`;
       html += `<div class="chance-list">${cs.pool.map((e) => {
         const c = App.data.getChar(e.cid);
-        return `<div class="chance-row r-${c.rarity}"><i class="dot"></i><span>${esc(c.name)}</span><b>${U.pct(e.chance)}</b></div>`;
+        return `<div class="chance-row r-${c.rarity}"><i class="dot"></i><span>${esc(c.name)}</span><small class="muted">${U.short(cs.previewValues[e.cid] || 0)}</small><b>${U.pct(e.chance)}</b></div>`;
       }).join('')}</div>`;
     } else html += '<div class="muted small mt">Выбери персонажей, чтобы увидеть шансы</div>';
     if (warnings.length) html += warnings.map((w) => `<div class="small ${w.level === 'error' ? 'bad' : 'warn'}">⚠️ ${esc(w.msg)}</div>`).join('');
@@ -468,7 +480,10 @@
         const a = t.closest('[data-act]');
         if (a) {
           const act = a.dataset.act;
-          if (act === 'checkimg') checkImages(body);
+          if (act === 'toggledemo') {
+            showDemo = a.checked;
+            renderCheck(body);
+          } else if (act === 'checkimg') checkImages(body);
           else if (act === 'randlook') {
             const P = PAL();
             const pick = (arr) => arr[Math.floor(Math.random() * arr.length)];

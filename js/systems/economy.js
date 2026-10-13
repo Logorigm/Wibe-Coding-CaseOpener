@@ -41,8 +41,26 @@
     },
 
     /* ---------- уровни ---------- */
+    // Опыт до следующего уровня = N открытий самого крупного кейса, доступного на этом уровне
     xpNeeded(level) {
-      return Math.round(CFG.levels.xpBase * Math.pow(level, CFG.levels.xpPower));
+      const L = CFG.levels;
+      const info = App.data.levelInfo(level);
+      if (typeof L.xpNeeded === 'function') return Math.max(1, Math.round(L.xpNeeded(level, info)));
+      return Math.max(L.minXp || 50, Math.round((L.opensPerLevel || 10) * info.bestCasePrice * L.xpPerCoin));
+    },
+    // Множитель наград (задания, ежедневные награды, помощь): растёт с ценой лучшего доступного кейса
+    scale(level) {
+      const base = (CFG.economy && CFG.economy.scaleBase) || 100;
+      return Math.max(1, App.data.levelInfo(level || App.state.level).bestCasePrice / base);
+    },
+    // Копия награды с монетами и опытом, умноженными на scale()
+    scaled(r, level) {
+      if (!r) return r;
+      const out = Object.assign({}, r);
+      const k = eco.scale(level);
+      if (out.coins) out.coins = Math.round((out.coins * k) / 10) * 10 || out.coins;
+      if (out.xp) out.xp = Math.round(out.xp * k);
+      return out;
     },
     title(level) {
       const t = (CFG.levels.titles || []).filter((x) => x.level <= level);
@@ -68,7 +86,7 @@
         const total = {};
         gained.forEach((lvl) => {
           let r = {};
-          try { r = CFG.levels.reward(lvl) || {}; } catch (e) { console.error(e); }
+          try { r = CFG.levels.reward(lvl, App.data.levelInfo(lvl)) || {}; } catch (e) { console.error(e); }
           mergeReward(total, r);
           (CFG.frames || []).forEach((f) => {
             if (f.level === lvl && !st.owned.frames.includes(f.id)) {
@@ -80,7 +98,7 @@
         eco.grant(total, 'level', { silent: true });
         App.stats.set('level', st.level);
         App.bus.emit('levelup', { levels: gained, level: st.level });
-        App.ui.levelUp(st.level, total);
+        App.ui.levelUp(st.level, total, gained);
       }
     },
 
@@ -146,14 +164,34 @@
       const b = App.state.boosts.xp;
       return b && b.until > Date.now() ? b.until - Date.now() : 0;
     },
+    // Цена буста. У бустов со scalePrice: true монеты растут вместе с ценой лучшего доступного кейса
+    price(def) {
+      if (!def || !def.price || !def.scalePrice) return def && def.price;
+      const k = eco.scale();
+      const out = {};
+      Object.keys(def.price).forEach((cur) => {
+        out[cur] = cur === 'coins' ? Math.round((def.price[cur] * k) / 10) * 10 : def.price[cur];
+      });
+      return out;
+    },
     luckCharges() {
       const b = App.state.boosts.luck;
       return b ? b.charges || 0 : 0;
     },
-    // использовать заряд удачи: вернёт множитель или 0
-    useLuck() {
+    // Удача действует только на кейсы не дороже лучшего кейса на момент покупки
+    luckMaxPrice() {
       const b = App.state.boosts.luck;
-      if (!b || !(b.charges > 0)) return 0;
+      return b && b.charges > 0 ? b.maxPrice || 0 : 0;
+    },
+    luckApplies(cs) {
+      const b = App.state.boosts.luck;
+      if (!b || !(b.charges > 0) || !cs || !(cs.price > 0)) return false;
+      return !b.maxPrice || App.data.priceInCoins(cs) <= b.maxPrice;
+    },
+    // использовать заряд удачи для кейса: вернёт множитель или 0
+    useLuck(cs) {
+      const b = App.state.boosts.luck;
+      if (!boosts.luckApplies(cs)) return 0;
       b.charges -= 1;
       App.bus.emit('boosts');
       App.store.dirty();
@@ -165,8 +203,8 @@
         const cur = st.boosts.xp && st.boosts.xp.until > Date.now() ? st.boosts.xp.until : Date.now();
         st.boosts.xp = { until: cur + def.minutes * 60000, mult: def.mult };
       } else if (def.type === 'luck') {
-        const cur = st.boosts.luck ? st.boosts.luck.charges || 0 : 0;
-        st.boosts.luck = { charges: cur + def.charges, mult: def.mult };
+        // новая покупка заменяет старые заряды
+        st.boosts.luck = { charges: def.charges, mult: def.mult, maxPrice: App.data.levelInfo(st.level).bestCasePrice };
       }
       App.bus.emit('boosts');
       App.store.dirty();

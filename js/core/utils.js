@@ -165,6 +165,11 @@
     }
   };
   U.download = (name, text, mime) => {
+    // В Android-приложении (WebView) обычное скачивание не работает — сохраняем через системный диалог
+    if (window.AndroidApp && typeof window.AndroidApp.saveFile === 'function') {
+      window.AndroidApp.saveFile(name, String(text));
+      return;
+    }
     const blob = new Blob([text], { type: mime || 'application/json' });
     const a = document.createElement('a');
     a.href = URL.createObjectURL(blob);

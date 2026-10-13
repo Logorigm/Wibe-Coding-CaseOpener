@@ -20,12 +20,20 @@
     render(ctx) {
       const st = App.state;
       const cases = App.cases.list();
-      const featured = cases.find((c) => c.featured && !App.cases.isLocked(c)) || cases.find((c) => c.price > 0 && !App.cases.isLocked(c)) || cases[0];
+      const lad = App.views.ladderInfo();
+      const featured =
+        cases.find((c) => c.featured && !App.cases.isLocked(c)) || lad.best || cases.find((c) => c.price > 0 && !App.cases.isLocked(c)) || cases[0];
+      // На главной: панель «лучший → следующий», затем особые и остальные доступные (от дорогих к дешёвым)
+      const ladIds = new Set(lad.ladder.map((c) => c.id));
+      const homeCases = cases
+        .filter((c) => !ladIds.has(c.id) && !App.cases.isLocked(c))
+        .concat(lad.open.slice().reverse().filter((c) => c !== lad.best))
+        .slice(0, 8);
+      const colTotal = App.collection.total();
       let heroChars = featured ? Array.from(new Set(featured.pool.map((e) => e.cid))).slice(0, 3) : [];
       if (!heroChars.length) heroChars = App.data.chars.slice(-3).map((c) => c.id);
       const top = App.widgets.sortItems(st.inventory, 'value-desc').slice(0, 6);
       const games = (App.games && App.games.list()) || [];
-      const uniq = App.inv.uniqueCount();
 
       ctx.el.innerHTML = `
         <section class="hero">
@@ -40,7 +48,7 @@
             </div>
             <div class="hero-stats">
               <div><b>${U.fmt(App.stats.get('casesOpened'))}</b><span>кейсов открыто</span></div>
-              <div><b>${uniq}/${App.data.chars.length}</b><span>в коллекции</span></div>
+              <div><b>${colTotal.have}/${colTotal.total}</b><span>в коллекции</span></div>
               <div><b>${st.level}</b><span>уровень</span></div>
             </div>
           </div>
@@ -51,13 +59,14 @@
 
         <section class="section">
           <div class="section-head"><h2>🎁 Кейсы</h2><a class="link" href="#/cases">Все кейсы →</a></div>
-          <div class="grid-cases">${cases.slice(0, 8).map(App.views.caseCard).join('')}</div>
+          ${App.views.ladderPanel()}
+          <div class="grid-cases">${homeCases.map((c) => App.views.caseCard(c, { best: lad.best && lad.best.id })).join('')}</div>
         </section>
 
         <section class="section">
           <div class="section-head"><h2>🎮 Мини-игры</h2><a class="link" href="#/games">Все игры →</a></div>
           <div class="games-strip">${games
-            .map((g) => `<a class="game-chip" href="#/game/${g.id}" style="--gc:${g.color || 'var(--accent)'}"><span class="game-chip-ico">${g.icon}</span><span><b>${esc(g.name)}</b><small>${esc(g.short || '')}</small></span></a>`)
+            .map((g) => `<a class="game-chip" href="${App.games.href(g)}" style="--gc:${g.color || 'var(--accent)'}"><span class="game-chip-ico">${g.icon}</span><span><b>${esc(g.name)}</b><small>${esc(g.short || '')}</small></span></a>`)
             .join('')}</div>
         </section>
 
@@ -118,7 +127,7 @@
           w.push(`<div class="widget w-help">
             <div class="widget-ico big">🆘</div>
             <div class="widget-body"><div class="widget-title">Монеты закончились?</div>
-            <div class="widget-sub">${left > 0 ? `Помощь снова будет через ${U.duration(left)}` : `Держи ${ui.cur(bk.coins)} на новые кейсы`}</div></div>
+            <div class="widget-sub">${left > 0 ? `Помощь снова будет через ${U.duration(left)}` : `Держи ${ui.cur(App.eco.scaled({ coins: bk.coins }).coins)} на новые кейсы`}</div></div>
             ${left > 0 ? '' : '<button class="btn btn-sm btn-gold" data-act="bankrupt">Получить</button>'}
           </div>`);
         }
@@ -134,7 +143,7 @@
           renderWidgets();
         } else if (b && b.dataset.act === 'bankrupt') {
           st.limits.bankrupt = Date.now();
-          App.eco.grant({ coins: CFG.bankrupt.coins }, 'help', { title: 'Помощь от сенпая' });
+          App.eco.grant(App.eco.scaled({ coins: CFG.bankrupt.coins }), 'help', { title: 'Помощь от сенпая' });
           renderWidgets();
         }
         const card = e.target.closest('.hero-card .ccard, .grid-cards .ccard');

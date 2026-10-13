@@ -1,4 +1,4 @@
-/* Мини-игра «Ракета» (краш): множитель растёт, забери выигрыш до взрыва */
+/* Мини-игра «Краш»: ракета летит, множитель растёт — забери выигрыш до взрыва */
 (function () {
   'use strict';
   const App = window.App;
@@ -10,7 +10,7 @@
 
   App.games.register({
     id: 'crash',
-    name: 'Ракета',
+    name: 'Краш',
     icon: '🚀',
     color: '#f43f5e',
     short: 'Забери выигрыш до взрыва',
@@ -280,7 +280,7 @@
             const payout = Math.floor(stake * cur);
             App.eco.add(payout, 'coins');
             App.games.record('crash', stake, payout);
-            ui.toast(`🚀 Ракета: авто-вывод на ×${cur.toFixed(2)} → ${ui.cur(payout)}`, 'good');
+            ui.toast(`🚀 Краш: авто-вывод на ×${cur.toFixed(2)} → ${ui.cur(payout)}`, 'good');
           } else {
             App.games.record('crash', stake, 0);
             ui.toast(`🚀 Ракета взорвалась на ×${crashAt.toFixed(2)}`, 'bad');

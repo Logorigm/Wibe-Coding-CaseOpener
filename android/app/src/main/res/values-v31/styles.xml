@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Android 12+: тёмный экран запуска -->
+    <style name="AppTheme" parent="BaseTheme">
+        <item name="android:windowSplashScreenBackground">@color/bg</item>
+    </style>
+</resources>

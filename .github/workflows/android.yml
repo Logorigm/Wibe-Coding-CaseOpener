@@ -1,0 +1,94 @@
+# Сборка Android-приложения (APK) при каждой отправке изменений на GitHub.
+#
+# Что происходит:
+#   1. Картинки из папки characters/ превращаются в data/characters.auto.js
+#      (если список персонажей изменился — бот сохраняет файл в репозиторий).
+#   2. Игра упаковывается в Android-приложение и подписывается.
+#   3. Готовый APK публикуется во вкладке Releases (и как артефакт сборки во вкладке Actions).
+#
+# Скачать последний APK: https://github.com/<владелец>/<репозиторий>/releases/latest
+name: Android APK
+
+on:
+  push:
+    branches: ['**']
+    paths-ignore:
+      - '**.md'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: android-apk-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  apk:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      VERSION_NAME: 1.0.${{ github.run_number }}
+    steps:
+      - name: Скачать код
+        uses: actions/checkout@v4
+
+      - name: Установить Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Импорт персонажей из папки characters/
+        run: node tools/import-characters.js
+
+      - name: Сохранить обновлённый список персонажей
+        run: |
+          if git diff --quiet -- data/characters.auto.js; then
+            echo "Список персонажей не изменился"
+          else
+            git config user.name "github-actions[bot]"
+            git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+            git add data/characters.auto.js
+            git commit -m "Обновлён список персонажей из папки characters/ [skip ci]"
+            git push origin "HEAD:${GITHUB_REF}" || echo "::warning::Не удалось сохранить data/characters.auto.js — он обновится при следующей сборке"
+          fi
+
+      - name: Установить Java 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 17
+
+      - name: Подготовить Gradle
+        uses: gradle/actions/setup-gradle@v4
+
+      - name: Собрать APK
+        working-directory: android
+        run: |
+          chmod +x gradlew
+          ./gradlew assembleRelease --no-daemon --stacktrace -PversionCode=${{ github.run_number }} -PversionName=${VERSION_NAME}
+
+      - name: Переименовать APK
+        run: cp android/app/build/outputs/apk/release/app-release.apk "WaifuDrop-${VERSION_NAME}.apk"
+
+      - name: Сохранить APK как артефакт сборки
+        uses: actions/upload-artifact@v4
+        with:
+          name: WaifuDrop-${{ env.VERSION_NAME }}
+          path: WaifuDrop-*.apk
+          if-no-files-found: error
+
+      - name: Опубликовать в Releases
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: v${{ env.VERSION_NAME }}
+          name: WaifuDrop ${{ env.VERSION_NAME }}
+          target_commitish: ${{ github.sha }}
+          make_latest: true
+          files: WaifuDrop-*.apk
+          body: |
+            Сборка из ветки `${{ github.ref_name }}` (коммит ${{ github.sha }}).
+
+            **Как установить:** скачай файл `WaifuDrop-${{ env.VERSION_NAME }}.apk` ниже на телефон и открой его.
+            Если Android спросит — разреши установку из этого источника.
+            Новая версия ставится поверх старой, прогресс сохраняется.

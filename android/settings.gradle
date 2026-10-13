@@ -1,0 +1,20 @@
+// Android-обёртка игры: WebView, внутри которого работает та же игра, что и в браузере.
+// Файлы игры (index.html, css, js, data, assets, characters) копируются в APK при сборке.
+pluginManagement {
+    repositories {
+        google()
+        mavenCentral()
+        gradlePluginPortal()
+    }
+}
+
+dependencyResolutionManagement {
+    repositoriesMode.set(RepositoriesMode.FAIL_ON_PROJECT_REPOS)
+    repositories {
+        google()
+        mavenCentral()
+    }
+}
+
+rootProject.name = 'WaifuDrop'
+include ':app'

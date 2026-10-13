@@ -4,11 +4,12 @@
  *  Здесь настраивается всё, кроме персонажей и кейсов:
  *  валюты, редкости, уровни, ежедневные награды, мини-игры, магазин и т.д.
  *
- *  Персонажи  → data/characters.js
- *  Кейсы      → data/cases.js
- *  Достижения → data/achievements.js
- *  Задания    → data/quests.js
- *  Промокоды  → data/promocodes.js
+ *  Твои персонажи → data/characters.js  (или картинками в папку characters/)
+ *  Кейсы          → data/cases.js
+ *  Демо-персонажи → data/demo.js
+ *  Достижения     → data/achievements.js
+ *  Задания        → data/quests.js
+ *  Промокоды      → data/promocodes.js
  * ========================================================================== */
 window.GAME_DATA = window.GAME_DATA || {};
 
@@ -27,23 +28,37 @@ GAME_DATA.config = {
 
   /* --------------------------------------------------------------------------
    *  РЕДКОСТИ
-   *  id     — используется в characters.js (rarity: 'epic')
-   *  name   — название в интерфейсе
-   *  color  — цвет рамки/свечения
-   *  weight — базовый шанс выпадения редкости из кейса (относительный, ~в процентах)
-   *  value  — базовая цена продажи персонажа (если у персонажа не указана своя value)
-   *  dust   — сколько звёздной пыли даёт распыление
-   *  craft  — сколько пыли стоит создать персонажа
+   *  id        — используется у персонажей (rarity: 'epic') и в именах папок characters/
+   *  name      — название в интерфейсе (его тоже можно писать в rarity: 'легендарная')
+   *  color     — цвет рамки/свечения
+   *  weight    — шанс редкости в кейсе по умолчанию (относительный, ~в процентах)
+   *  valueMult — во сколько раз персонаж этой редкости дороже обычного из того же кейса
    *  Порядок важен: от самой частой к самой редкой.
    * ------------------------------------------------------------------------ */
   rarities: [
-    { id: 'common',    name: 'Обычная',     color: '#a3aec2', weight: 55,  value: 10,   dust: 1,   craft: 8 },
-    { id: 'uncommon',  name: 'Необычная',   color: '#4ade80', weight: 25,  value: 30,   dust: 3,   craft: 24 },
-    { id: 'rare',      name: 'Редкая',      color: '#3b9bff', weight: 12,  value: 100,  dust: 10,  craft: 80 },
-    { id: 'epic',      name: 'Эпическая',   color: '#b45cff', weight: 5.5, value: 350,  dust: 35,  craft: 280 },
-    { id: 'legendary', name: 'Легендарная', color: '#ffb020', weight: 2,   value: 1200, dust: 120, craft: 960 },
-    { id: 'mythic',    name: 'Мифическая',  color: '#ff3d71', weight: 0.5, value: 5000, dust: 500, craft: 4000, rainbow: true },
+    { id: 'common',    name: 'Обычная',     color: '#a3aec2', weight: 55,  valueMult: 1 },
+    { id: 'uncommon',  name: 'Необычная',   color: '#4ade80', weight: 25,  valueMult: 3 },
+    { id: 'rare',      name: 'Редкая',      color: '#3b9bff', weight: 12,  valueMult: 10 },
+    { id: 'epic',      name: 'Эпическая',   color: '#b45cff', weight: 5.5, valueMult: 35 },
+    { id: 'legendary', name: 'Легендарная', color: '#ffb020', weight: 2,   valueMult: 120 },
+    { id: 'mythic',    name: 'Мифическая',  color: '#ff3d71', weight: 0.5, valueMult: 500, rainbow: true },
   ],
+
+  /* --------------------------------------------------------------------------
+   *  ЭКОНОМИКА
+   *  Цены персонажей считаются сами: у каждого кейса есть цена и окупаемость rtp
+   *  (в data/cases.js), и персонажи кейса оцениваются так, чтобы средний дроп
+   *  был равен rtp × цена кейса.
+   * ------------------------------------------------------------------------ */
+  economy: {
+    defaultRtp: 0.9,    // окупаемость кейса, если у него не указан rtp
+    baseValue: 10,      // цена обычного персонажа, который не лежит ни в одном кейсе
+    freeCaseValue: 30,  // средний дроп бесплатного кейса со своими персонажами
+    dustRate: 0.25,     // распыление даёт пыль = 25% цены персонажа
+    craftRate: 1,       // создание персонажа стоит пыль = 100% его цены
+    scaleBase: 100,     // монеты в заданиях и наградах растут вместе с ценой лучшего доступного кейса
+    demoFill: true,     // заполнять пустые кейсы демо-персонажами (data/demo.js)
+  },
 
   // «Шайни» — редкая сияющая версия любого персонажа (голографический эффект)
   shiny: {
@@ -56,42 +71,57 @@ GAME_DATA.config = {
    *  УРОВНИ
    * ------------------------------------------------------------------------ */
   levels: {
-    max: 100,
-    xpBase: 80,      // опыт до следующего уровня = xpBase * (уровень ^ xpPower)
-    xpPower: 1.45,
-    xpPerCoin: 0.25, // опыт за каждую монету, потраченную на кейсы
-    xpPerBet: 0.04,  // опыт за каждую монету, поставленную в мини-играх
+    max: 50,
+    xpPerCoin: 0.25,   // опыт за каждую монету, потраченную на кейсы
+    xpPerBet: 0.04,    // опыт за каждую монету, поставленную в мини-играх
+    // Сколько открытий самого крупного доступного кейса нужно, чтобы взять уровень.
+    // Так прокачка всегда идёт в своём темпе: на каждом уровне — новый, более крупный кейс.
+    opensPerLevel: 10,
+    minXp: 60,
 
-    // Награда за новый уровень. Это обычная функция — меняй как хочешь.
-    reward(level) {
-      const r = { coins: 150 + level * 50 };
-      if (level % 5 === 0) r.gems = 5 + level;
+    // Награда за новый уровень. info.bestCasePrice — цена самого крупного кейса, доступного на этом уровне.
+    reward(level, info) {
+      const r = { coins: Math.round(info.bestCasePrice * 3) };
+      if (level % 5 === 0) r.gems = 10 + level;
       if (level % 10 === 0) r.tickets = { divine: 1 };
       return r;
     },
 
     // Титулы игрока по уровню
     titles: [
-      { level: 1,   name: 'Новичок' },
-      { level: 3,   name: 'Любитель аниме' },
-      { level: 6,   name: 'Отаку' },
-      { level: 10,  name: 'Коллекционер' },
-      { level: 15,  name: 'Сенпай' },
-      { level: 20,  name: 'Охотник за вайфу' },
-      { level: 30,  name: 'Сенсей' },
-      { level: 40,  name: 'Мастер гачи' },
-      { level: 50,  name: 'Легенда' },
-      { level: 75,  name: 'Аниме-божество' },
-      { level: 100, name: 'Император вайфу' },
+      { level: 1,  name: 'Новичок' },
+      { level: 3,  name: 'Любитель аниме' },
+      { level: 5,  name: 'Отаку' },
+      { level: 8,  name: 'Коллекционер' },
+      { level: 10, name: 'Сенпай' },
+      { level: 13, name: 'Охотник за вайфу' },
+      { level: 16, name: 'Сенсей' },
+      { level: 20, name: 'Мастер гачи' },
+      { level: 25, name: 'Легенда' },
+      { level: 35, name: 'Аниме-божество' },
+      { level: 50, name: 'Император вайфу' },
+    ],
+  },
+
+  // Коллекция — все персонажи, которых ты хоть раз выбивал (даже если потом продал).
+  // Награды за процент собранной коллекции:
+  collection: {
+    milestones: [
+      { pct: 10,  reward: { gems: 10 } },
+      { pct: 25,  reward: { gems: 25 } },
+      { pct: 50,  reward: { gems: 60 } },
+      { pct: 75,  reward: { gems: 120 } },
+      { pct: 100, reward: { gems: 300 } },
     ],
   },
 
   // Ежедневная награда за вход (7 дней по кругу). Пропустил день — серия сбрасывается.
+  // Монеты здесь растут вместе с твоим уровнем (economy.scaleBase).
   dailyRewards: [
     { coins: 150 },
     { coins: 300 },
     { gems: 5 },
-    { coins: 500, tickets: { sakura: 1 } },
+    { coins: 500, tickets: { academy: 2 } },
     { gems: 10 },
     { coins: 1000 },
     { gems: 25, tickets: { divine: 1 } },
@@ -103,7 +133,7 @@ GAME_DATA.config = {
   // Апгрейд: шанс = (ставка / цель) * (1 - houseEdge), но не больше maxChance
   upgrade: { houseEdge: 0.05, maxChance: 0.9, maxItems: 8 },
 
-  // Контракт: N персонажей одной редкости → 1 персонаж следующей редкости
+  // Контракт: N персонажей одного кейса и одной редкости → 1 персонаж следующей редкости из того же кейса
   contracts: {
     inputCount: 5,
     newCharBias: 0.6,    // шанс, что выпадет персонаж, которого у тебя ещё нет (если такие есть)
@@ -112,20 +142,34 @@ GAME_DATA.config = {
 
   battles: { maxRounds: 10 },
 
-  // Помощь при банкротстве (если не на что открыть даже самый дешёвый кейс)
+  // Помощь при банкротстве (если не на что открыть даже самый дешёвый кейс). Монеты растут с уровнем.
   bankrupt: { coins: 300, cooldownMinutes: 30 },
 
   /* --------------------------------------------------------------------------
    *  МИНИ-ИГРЫ
    * ------------------------------------------------------------------------ */
   games: {
+    // Какие мини-игры показывать и в каком порядке.
+    // Есть ещё 'mines', 'dice', 'memory', 'wheel' — допиши их сюда, чтобы включить.
+    enabled: ['crash', 'roulette', 'coinflip', 'jackpot', 'upgrade'],
+
     minBet: 10,
-    maxBet: 50000,
+    maxBet: 1000000,
 
     crash:    { houseEdge: 0.04, speed: 0.11, maxMultiplier: 1000 },
     mines:    { houseEdge: 0.03 },
     coinflip: { payout: 1.94 },
     dice:     { houseEdge: 0.03 },
+
+    // Рулетка: 15 секторов. Ставишь на цвет, выигрыш = ставка × mult.
+    roulette: {
+      bettingSeconds: 12, // сколько секунд принимаются ставки
+      sectors: [
+        { id: 'sakura', name: 'Сакура', icon: '🌸', color: '#ff4fa3', mult: 2,  count: 7 },
+        { id: 'moon',   name: 'Луна',   icon: '🌙', color: '#6366f1', mult: 2,  count: 7 },
+        { id: 'star',   name: 'Звезда', icon: '⭐', color: '#fbbf24', mult: 14, count: 1 },
+      ],
+    },
 
     wheel: {
       modes: [
@@ -139,7 +183,7 @@ GAME_DATA.config = {
         { reward: { coins: 250 },                weight: 20 },
         { reward: { gems: 3 },                   weight: 15 },
         { reward: { coins: 500 },                weight: 12 },
-        { reward: { tickets: { sakura: 2 } },    weight: 10 },
+        { reward: { tickets: { novice: 3 } },    weight: 10 },
         { reward: { gems: 10 },                  weight: 8 },
         { reward: { coins: 1500 },               weight: 6 },
         { reward: { gems: 30 },                  weight: 3 },
@@ -147,17 +191,21 @@ GAME_DATA.config = {
       ],
     },
 
-    // Слоты: 3 барабана, выигрыш по центральной линии.
+    // Джекпот (однорукий бандит): 3 барабана, выигрыш по центральной линии.
     // x3 — множитель за три одинаковых, x2 — за два одинаковых слева.
-    slots: {
+    // Три символа с jackpot: true забирают ДЖЕКПОТ — копилку, которая растёт с каждой ставки.
+    jackpot: {
+      seed: 3000,          // с какой суммы копилка начинается
+      contribution: 0.03,  // какая доля каждой ставки идёт в копилку
+      fullBet: 500,        // при ставке от этой суммы выигрываешь всю копилку (меньше — пропорционально)
       symbols: [
-        { id: 'onigiri', icon: '🍙', weight: 24, x3: 8,   x2: 1.5 },
+        { id: 'onigiri', icon: '🍙', weight: 24, x3: 8,   x2: 2 },
         { id: 'dango',   icon: '🍡', weight: 21, x3: 12,  x2: 2 },
         { id: 'sakura',  icon: '🌸', weight: 18, x3: 18,  x2: 2.5 },
         { id: 'neko',    icon: '🐱', weight: 15, x3: 30,  x2: 3.5 },
         { id: 'ribbon',  icon: '🎀', weight: 11, x3: 50,  x2: 5 },
         { id: 'gem',     icon: '💎', weight: 7,  x3: 100, x2: 8 },
-        { id: 'crown',   icon: '👑', weight: 4,  x3: 500, x2: 15 },
+        { id: 'crown',   icon: '👑', weight: 6,  jackpot: true, x2: 12 },
       ],
     },
 
@@ -187,14 +235,16 @@ GAME_DATA.config = {
 
     boosts: [
       { id: 'xp2',  icon: '⚡', name: 'Двойной опыт', desc: 'Весь опыт за действия ×2 в течение 30 минут', price: { gems: 15 }, type: 'xp', mult: 2, minutes: 30 },
-      { id: 'luck', icon: '🍀', name: 'Удача сенпая', desc: 'Шанс эпических и выше ×1.5 на следующие 10 открытий кейсов', price: { gems: 20 }, type: 'luck', mult: 1.5, charges: 10 },
+      // scalePrice: true — цена в монетах растёт вместе с уровнем (от цены лучшего доступного кейса)
+      { id: 'luck', icon: '🍀', name: 'Удача сенпая', desc: 'Шанс эпических и выше ×1.5 на 10 открытий кейсов (не дороже твоего лучшего кейса)', price: { coins: 300 }, scalePrice: true, type: 'luck', mult: 1.5, charges: 10 },
     ],
 
     // Билеты = бесплатные открытия конкретного кейса
     tickets: [
-      { caseId: 'sakura', amount: 3, price: { gems: 3 } },
-      { caseId: 'neko',   amount: 3, price: { gems: 5 } },
-      { caseId: 'divine', amount: 3, price: { gems: 20 } },
+      { caseId: 'novice', amount: 5, price: { gems: 2 } },
+      { caseId: 'neko',   amount: 3, price: { gems: 3 } },
+      { caseId: 'idol',   amount: 3, price: { gems: 6 } },
+      { caseId: 'moon',   amount: 2, price: { gems: 18 } },
     ],
   },
 

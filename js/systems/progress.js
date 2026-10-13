@@ -5,14 +5,17 @@
   const U = App.utils;
   const CFG = GAME_DATA.config;
 
+  // Включена ли мини-игра (config.games.enabled)
+  App.gameEnabled = (id) => {
+    const en = CFG.games && CFG.games.enabled;
+    return !Array.isArray(en) || en.includes(id);
+  };
+
   /* ======================= Статистика ======================= */
   const computed = {
     level: () => App.state.level,
     uniqueCharacters: () => App.inv.uniqueCount(),
-    collectionPercent: () => {
-      const total = App.data.chars.length;
-      return total ? Math.floor((App.inv.uniqueCount() / total) * 100) : 0;
-    },
+    collectionPercent: () => Math.floor(App.collection.total().pct),
     coins: () => App.state.coins,
   };
   let checkTimer = null;
@@ -55,7 +58,7 @@
 
   /* ======================= Достижения ======================= */
   App.ach = {
-    defs: () => GAME_DATA.achievements || [],
+    defs: () => (GAME_DATA.achievements || []).filter((d) => !d.game || App.gameEnabled(d.game)),
     progress(def) {
       return Math.min(def.goal, App.stats.get(def.stat));
     },
@@ -117,7 +120,7 @@
       if (st.quests && st.quests.date === today) return;
       const cfg = App.quests.cfg();
       const rng = U.seeded(today + ':' + st.createdAt);
-      const pool = (cfg.pool || []).filter((q) => !q.minLevel || st.level >= q.minLevel);
+      const pool = (cfg.pool || []).filter((q) => (!q.minLevel || st.level >= q.minLevel) && (!q.game || App.gameEnabled(q.game)));
       const picked = U.shuffle(pool, rng).slice(0, cfg.perDay || 3);
       st.quests = {
         date: today,
@@ -140,6 +143,7 @@
           const progress = Math.max(0, Math.min(goal.n, App.stats.get(def.stat) - q.base));
           return {
             index: i, def, goal, progress,
+            reward: App.eco.scaled(goal.reward),
             done: progress >= goal.n,
             claimed: q.claimed,
             text: def.text.replace('{n}', U.fmt(goal.n)),
@@ -152,7 +156,7 @@
       if (!q || !q.done || q.claimed) return;
       App.state.quests.list[i].claimed = true;
       App.stats.inc('questsDone');
-      App.eco.grant(q.goal.reward, 'quest', { title: 'Задание выполнено!' });
+      App.eco.grant(q.reward, 'quest', { title: 'Задание выполнено!' });
       App.bus.emit('badges');
     },
     allDone() {
@@ -162,7 +166,7 @@
     claimBonus() {
       if (!App.quests.allDone() || App.state.quests.bonusClaimed) return;
       App.state.quests.bonusClaimed = true;
-      App.eco.grant(App.quests.cfg().bonus, 'quest', { title: 'Все задания дня выполнены!' });
+      App.eco.grant(App.eco.scaled(App.quests.cfg().bonus), 'quest', { title: 'Все задания дня выполнены!' });
       App.fx.confetti();
       App.bus.emit('badges');
     },
@@ -176,7 +180,7 @@
 
   /* ======================= Ежедневная награда ======================= */
   App.daily = {
-    rewards: () => CFG.dailyRewards || [],
+    rewards: () => (CFG.dailyRewards || []).map((r) => App.eco.scaled(r)),
     info() {
       const d = App.state.daily;
       const today = U.todayKey();
@@ -203,6 +207,6 @@
   App.badges = {
     quests: () => App.ach.claimable() + App.quests.claimable() + (App.daily.info().claimedToday ? 0 : 1),
     inventory: () => App.inv.newCount(),
-    collection: () => App.collection.claimable().length,
+    collection: () => App.collection.claimableCount(),
   };
 })();

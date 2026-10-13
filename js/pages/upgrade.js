@@ -10,7 +10,7 @@
   const CIRC = 2 * Math.PI * R;
 
   App.router.register('upgrade', {
-    title: 'Апгрейд',
+    title: 'Апгрейдер',
     minLevel: () => (CFG.unlocks && CFG.unlocks.upgrade) || 1,
     render(ctx) {
       const opt = CFG.upgrade || { houseEdge: 0.05, maxChance: 0.9, maxItems: 8 };
@@ -23,7 +23,7 @@
       let tShiny = false;
 
       ctx.el.innerHTML = `
-        <div class="page-head"><div><h1>Апгрейд</h1><p class="muted">Поставь персонажей и попробуй превратить их в кого-то подороже. Чем выше цель — тем меньше шанс.</p></div></div>
+        <div class="page-head"><div><h1>Апгрейдер</h1><p class="muted">Поставь персонажей и попробуй превратить их в кого-то подороже. Чем выше цель — тем меньше шанс.</p></div></div>
         <div class="upgrade-layout">
           <section class="panel up-side">
             <h3>Твоя ставка</h3>
@@ -156,7 +156,7 @@
         if (win) newItem = App.inv.add(tgt.cid, { shiny: tgt.shiny, source: 'upgrade' });
         App.stats.inc('upgradesDone');
         if (win) App.stats.inc('upgradesWon');
-        App.eco.addXp(Math.round(sv * 0.02));
+        App.eco.addXp(Math.round(sv * CFG.levels.xpPerBet));
         stake.clear();
         update();
         // анимация стрелки

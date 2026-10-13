@@ -70,21 +70,29 @@
     name: 'Колесо удачи',
     icon: '🎡',
     color: '#a855f7',
-    short: 'Крути и умножай',
+    get short() {
+      return App.gameEnabled('wheel') ? 'Крути и умножай' : 'Бесплатный приз раз в день';
+    },
     desc: 'Три уровня риска: от спокойного ×1.5 до безумного ×20. Плюс бесплатное колесо каждый день!',
-    rules: `<p>Выбери уровень риска и ставку. Колесо остановится на случайном секторе — ставка умножится на его множитель.</p>
-      <p>Все секторы одинаковые по размеру и шансу. Чем выше риск — тем больше пустых секторов (×0), но и множители выше.</p>
-      <p><b>Бесплатное колесо</b> можно крутить раз в день — там только призы!</p>`,
+    flag: () => (App.games.freeWheelReady() ? 'Бесплатный спин!' : ''),
+    get rules() {
+      const free = '<p><b>Бесплатное колесо</b> можно крутить раз в день — там только призы! Монетные призы растут вместе с твоим уровнем.</p>';
+      if (!App.gameEnabled('wheel')) return free;
+      return `<p>Выбери уровень риска и ставку. Колесо остановится на случайном секторе — ставка умножится на его множитель.</p>
+        <p>Все секторы одинаковые по размеру и шансу. Чем выше риск — тем больше пустых секторов (×0), но и множители выше.</p>${free}`;
+    },
     render(ctx, host) {
       const cfg = CFG.games.wheel;
-      let tab = App.games.freeWheelReady() ? 'free' : 'bet';
+      // если колесо выключено как мини-игра (config.games.enabled) — остаётся только бесплатный ежедневный спин
+      const betAllowed = App.gameEnabled('wheel');
+      let tab = !betAllowed || App.games.freeWheelReady() ? 'free' : 'bet';
       let modeId = App.state.lastBets.wheelMode || 'medium';
       let spinning = false;
       let rot = 0;
       let segs = [];
 
       host.innerHTML = `
-        ${App.widgets.tabs([['bet', '🎯 На ставку'], ['free', '🎁 Бесплатное колесо']], tab, 'data-wtabs')}
+        ${betAllowed ? App.widgets.tabs([['bet', '🎯 На ставку'], ['free', '🎁 Бесплатное колесо']], tab, 'data-wtabs') : ''}
         <div class="game-layout">
           <div class="game-panel panel" data-panel></div>
           <div class="game-stage panel wheel-stage">
@@ -103,7 +111,10 @@
         if (tab === 'bet') {
           segs = mode().segments.map((m) => ({ label: m ? '×' + m : '✕', color: colorFor(m), weight: 1, mult: m }));
         } else {
-          segs = cfg.daily.map((p, i) => ({ label: prizeLabel(p.reward), text: p.reward.coins ? '#fff3b0' : '#fff', color: PRIZE_COLORS[i % PRIZE_COLORS.length], weight: p.weight, reward: p.reward }));
+          segs = cfg.daily.map((p, i) => {
+            const reward = App.eco.scaled(p.reward); // монеты растут с уровнем
+            return { label: prizeLabel(reward), text: reward.coins ? '#fff3b0' : '#fff', color: PRIZE_COLORS[i % PRIZE_COLORS.length], weight: p.weight, reward };
+          });
         }
         $('[data-wheel]').innerHTML = wheelSvg(segs);
         const g = $('[data-rot]');

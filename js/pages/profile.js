@@ -97,7 +97,7 @@
               ${[
                 ['🎁', 'Кейсов открыто', U.fmt(s('casesOpened'))],
                 ['👥', 'Персонажей получено', U.fmt(s('itemsObtained'))],
-                ['📖', 'Коллекция', `${App.inv.uniqueCount()} / ${App.data.chars.length}`],
+                ['📖', 'Коллекция', `${App.collection.total().have} / ${App.collection.total().total}`],
                 ['✨', 'Шайни найдено', U.fmt(s('shinyObtained'))],
                 ['🎒', 'Стоимость инвентаря', ui.cur(App.inv.totalValue())],
                 ['💸', 'Потрачено на кейсы', ui.cur(s('spentOnCases'))],
@@ -109,7 +109,8 @@
                 ['🆙', 'Удачных апгрейдов', `${U.fmt(s('upgradesWon'))} / ${U.fmt(s('upgradesDone'))}`],
                 ['📜', 'Контрактов', U.fmt(s('contractsDone'))],
                 ['🏆', 'Достижений', `${Object.keys(st.achievements).length} / ${App.ach.defs().length}`],
-                ['🚀', 'Рекорд «Ракеты»', s('crashBest') ? U.mult(s('crashBest')) : '—'],
+                ['🚀', 'Рекорд «Краша»', s('crashBest') ? U.mult(s('crashBest')) : '—'],
+                ['🎰', 'Джекпотов сорвано', U.fmt(s('jackpotsWon'))],
                 ['📅', 'Лучшая серия входов', U.fmt(s('dailyStreakMax'))],
               ]
                 .map(([i, l, v]) => `<div class="stat panel"><span class="stat-ico">${i}</span><div><div class="stat-v">${v}</div><div class="stat-l">${l}</div></div></div>`)

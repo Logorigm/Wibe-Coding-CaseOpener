@@ -92,13 +92,16 @@
             <div class="shop-grid">${(shop.boosts || [])
               .map((b) => {
                 const active = b.type === 'xp' ? xpLeft > 0 : luck > 0;
-                const status = b.type === 'xp' ? (xpLeft > 0 ? `Активен: ${U.clock(xpLeft)}` : '') : luck > 0 ? `Осталось: ${luck}` : '';
+                const status =
+                  b.type === 'xp'
+                    ? xpLeft > 0 ? `Активен: ${U.clock(xpLeft)}` : ''
+                    : luck > 0 ? `Осталось: ${luck} · кейсы до ${ui.cur(App.boosts.luckMaxPrice())}` : '';
                 return `<div class="shop-item panel${active ? ' active' : ''}">
                   <div class="si-ico">${b.icon || '⚡'}</div>
                   <div class="si-name">${esc(b.name)}</div>
                   <div class="si-desc">${esc(b.desc || '')}</div>
                   ${status ? `<div class="si-status">${status}</div>` : ''}
-                  <button class="btn btn-primary" data-boost="${esc(b.id)}">${active ? 'Продлить' : 'Купить'} ${ui.priceTag(b.price)}</button>
+                  <button class="btn btn-primary" data-boost="${esc(b.id)}">${active ? (b.type === 'luck' ? 'Обновить' : 'Продлить') : 'Купить'} ${ui.priceTag(App.boosts.price(b))}</button>
                 </div>`;
               })
               .join('')}</div>
@@ -110,11 +113,12 @@
               .map((t, i) => {
                 const cs = App.data.getCase(t.caseId);
                 if (!cs) return '';
-                return `<div class="shop-item panel" style="--cc:${esc(cs.color)}">
+                const locked = App.cases.isLocked(cs);
+                return `<div class="shop-item panel${locked ? ' locked' : ''}" style="--cc:${esc(cs.color)}">
                   <div class="si-art">${ui.caseImg(cs)}</div>
                   <div class="si-name">${esc(cs.name)} ×${t.amount}</div>
-                  <div class="si-desc">У тебя: 🎟️ ${App.cases.tickets(cs)}</div>
-                  <button class="btn btn-primary" data-ticket="${i}">${ui.priceTag(t.price)}</button>
+                  <div class="si-desc">${locked ? `🔒 Кейс откроется на ${cs.requiredLevel} уровне` : `У тебя: 🎟️ ${App.cases.tickets(cs)}`}</div>
+                  <button class="btn btn-primary" data-ticket="${i}" ${locked ? 'disabled' : ''}>${ui.priceTag(t.price)}</button>
                 </div>`;
               })
               .join('')}</div>
@@ -183,7 +187,7 @@
         const bb = t.closest('[data-boost]');
         if (bb) {
           const b = shop.boosts.find((x) => x.id === bb.dataset.boost);
-          if (b && pay(b.price)) {
+          if (b && pay(App.boosts.price(b))) {
             App.boosts.activate(b);
             App.sfx.play('levelup');
             ui.toast(`${b.icon || '⚡'} ${esc(b.name)} — активировано!`, 'good');
@@ -194,7 +198,9 @@
         const tb = t.closest('[data-ticket]');
         if (tb) {
           const tk = shop.tickets[Number(tb.dataset.ticket)];
-          if (tk && pay(tk.price)) {
+          const tcs = tk && App.data.getCase(tk.caseId);
+          if (!tcs || App.cases.isLocked(tcs)) return;
+          if (pay(tk.price)) {
             App.state.tickets[tk.caseId] = (App.state.tickets[tk.caseId] || 0) + tk.amount;
             App.bus.emit('tickets');
             App.store.dirty();

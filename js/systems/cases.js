@@ -97,7 +97,7 @@
       for (let i = 0; i < count; i++) {
         let minTier = null;
         if (cs.pity && (st.pity[cs.id] || 0) + 1 >= cs.pity.count) minTier = pityTier;
-        const luck = App.boosts.useLuck();
+        const luck = App.boosts.useLuck(cs);
         const r = C.roll(cs, { minTier, luck });
         const ch = App.data.getChar(r.cid);
         if (cs.pity) st.pity[cs.id] = ch.r.index >= pityTier ? 0 : (st.pity[cs.id] || 0) + 1;

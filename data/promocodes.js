@@ -4,8 +4,8 @@
  *  Вводятся в «Магазин → Промокод». Каждый код можно активировать один раз.
  *  reward может содержать:
  *    coins, gems, dust, xp
- *    tickets:    { sakura: 3 }                 — билеты на открытие кейса
- *    characters: ['luna', { id: 'kuro', shiny: true }] — сразу выдать персонажей
+ *    tickets:    { neko: 3 }                   — билеты на открытие кейса (id кейса)
+ *    characters: ['rem', { id: 'ram', shiny: true }] — сразу выдать персонажей (id персонажей)
  *  expires: 'ГГГГ-ММ-ДД' — до какой даты код действует (необязательно)
  * ========================================================================== */
 window.GAME_DATA = window.GAME_DATA || {};
@@ -14,6 +14,6 @@ GAME_DATA.promocodes = [
   { code: 'WELCOME',   reward: { coins: 1000 },                       desc: 'Подарок для новичков' },
   { code: 'SENPAI',    reward: { gems: 25 },                          desc: 'Сенпай заметил тебя!' },
   { code: 'NEKO',      reward: { tickets: { neko: 3 } },              desc: '3 билета в Неко-кафе' },
-  { code: 'MOONLIGHT', reward: { characters: ['luna'] },              desc: 'Принцесса Луна в подарок' },
+  { code: 'MOONLIGHT', reward: { tickets: { moon: 2 } },             desc: '2 билета в «Лунный клинок»' },
   { code: 'WAIFU2026', reward: { coins: 2026, gems: 26 }, expires: '2026-12-31' },
 ];
