@@ -292,28 +292,41 @@ ${o.chance != null ? `<span class="cchance">${U.pct(o.chance)}</span>` : ''}
   };
 
   /* ======================= Новый уровень ======================= */
-  // gained — полученные уровни, features — разделы, которые открылись
+  // gained — полученные уровни, features — разделы, которые открылись.
+  // Если окно прошлого уровня ещё открыто, новое окно объединяет оба.
+  let levelShown = null; // { modal, gained, features, coins }
   ui.levelUp = (level, reward, gained, features) => {
     gained = gained && gained.length ? gained : [level];
     features = (features || []).filter((f) => f.desc);
-    const cases = App.data.cases.filter((cs) => !cs.hidden && cs.requiredLevel > 1 && gained.includes(cs.requiredLevel));
+    const coins = (reward && reward.coins) || 0;
     ui.whenIdle(() => {
+      let allGained = gained;
+      let allFeatures = features;
+      let allCoins = coins;
+      if (levelShown && !levelShown.modal.closed) {
+        allGained = levelShown.gained.concat(gained);
+        allFeatures = levelShown.features.concat(features);
+        allCoins += levelShown.coins;
+        levelShown.modal.close();
+      }
+      const cases = App.data.cases.filter((cs) => !cs.hidden && cs.requiredLevel > 1 && allGained.includes(cs.requiredLevel));
       App.sfx.play('levelup');
-      App.fx.confetti({ count: 90 });
-      ui.modal({
+      App.fx.confetti({ count: 40 });
+      const modal = ui.modal({
         cls: 'levelup-modal',
         size: 'sm',
         html: `<div class="lvlup">
           <div class="lvlup-label">Новый уровень</div>
           <div class="lvlup-num">${level}</div>
-          ${reward && reward.coins ? `<div class="lvlup-reward">${ui.cur(reward.coins, { sign: true })}</div>` : ''}
+          ${allCoins ? `<div class="lvlup-reward">${ui.cur(allCoins, { sign: true })}</div>` : ''}
           ${cases.length ? `<div class="lvlup-sec"><div class="lvlup-title">Новые кейсы</div><div class="lvlup-cases">${cases.map(ui.caseThumb).join('')}</div></div>` : ''}
-          ${features
+          ${allFeatures
             .map((f) => `<div class="lvlup-feature"><b>Открыто: ${esc(f.name)}</b><span>${esc(f.desc)}</span></div>`)
             .join('')}
         </div>`,
         actions: [{ label: 'Отлично', cls: 'btn-primary btn-block' }],
       });
+      levelShown = { modal, gained: allGained, features: allFeatures, coins: allCoins };
     });
   };
 

@@ -72,6 +72,7 @@
 .drop { display: flex; flex-direction: column; align-items: center; text-align: center; gap: 8px; }
 .drop-card { margin-bottom: 6px; }
 .drop-card .ccard { cursor: default; }
+.drop-card .ccard-info, .cd-art .ccard-info { display: none; }
 .drop-name { font-size: 20px; font-weight: 900; }
 .drop-tags { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; justify-content: center; }
 .drop-new { font-size: 12.5px; font-weight: 800; color: var(--accent); }

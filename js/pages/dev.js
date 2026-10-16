@@ -1,548 +1,968 @@
-/* «Конструктор» — инструменты разработчика:
- *  - проверка данных (ошибки, шансы, окупаемость кейсов, картинки)
- *  - создание персонажа и кейса с живым предпросмотром и готовым кодом
- *  - читы и симуляция кейсов для тестов
- * Показывается в меню, если включён «Режим разработчика» в настройках. */
+/* «Конструктор» — инструмент владельца игры:
+ *  - Проверка: ошибки в данных, кейсы (цены и окупаемость), список персонажей
+ *  - Персонаж / Кейс: форма с живым предпросмотром и готовым кодом для data/*.js
+ *  - Читы: монеты, уровень, симуляция открытий, сбросы
+ * Работает, когда в настройках включён «Режим разработчика». */
 (function () {
   'use strict';
   const App = window.App;
   const U = App.utils;
   const ui = App.ui;
   const esc = U.esc;
-  const W = App.widgets;
-  const PAL = () => App.art.palette;
+  const G = window.GAME_DATA;
+  const CFG = G.config;
 
-  const jsStr = (s) => "'" + String(s).replace(/\\/g, '\\\\').replace(/'/g, "\\'").replace(/\n/g, '\\n') + "'";
-  const svgUri = (svg) => 'data:image/svg+xml;charset=utf-8,' + encodeURIComponent(svg);
+  const TABS = [
+    ['check', 'Проверка'],
+    ['char', 'Персонаж'],
+    ['case', 'Кейс'],
+    ['cheats', 'Читы'],
+  ];
+  const RISKS = [
+    ['low', 'Низкий разброс'],
+    ['mid', 'Средний разброс'],
+    ['high', 'Высокий разброс'],
+    ['elite', 'Элитный'],
+  ];
+  const SOURCE = { manual: 'characters.js', folder: 'папка characters/', demo: 'демо' };
+  const LEVEL_NAME = { error: 'Ошибка', warn: 'Внимание', info: 'Заметка' };
+  const LEVEL_ORDER = { error: 0, warn: 1, info: 2 };
+  const PAGE_SIZE = 100;
+  const MSG_LIMIT = 8;
+  const SIM_N = [100, 1000, 10000, 100000];
 
-  // черновики форм живут, пока открыта вкладка браузера
+  /* ---------- мелочи ---------- */
+  const jsStr = (s) => "'" + String(s).replace(/\\/g, '\\\\').replace(/'/g, "\\'").replace(/\r?\n/g, '\\n') + "'";
+  const num = (v) => (v === '' || v == null ? NaN : Number(v));
+  const opts = (list, cur) => list.map(([v, l]) => `<option value="${esc(v)}"${String(v) === String(cur) ? ' selected' : ''}>${esc(l)}</option>`).join('');
+  const byLevel = (a, b) => a.requiredLevel - b.requiredLevel || a.price - b.price || String(a.name).localeCompare(String(b.name), 'ru');
+  const sortedCases = () => App.data.cases.slice().sort(byLevel);
+  function groupByLevel(list) {
+    const m = new Map();
+    list.forEach((cs) => {
+      if (!m.has(cs.requiredLevel)) m.set(cs.requiredLevel, []);
+      m.get(cs.requiredLevel).push(cs);
+    });
+    return Array.from(m.entries());
+  }
+  // факт RTP: красный — больше 100%, жёлтый — заметно отличается от цели
+  const rtpClass = (fact, target) => (fact == null ? '' : fact > 1 ? 'bad' : Math.abs(fact - target) > 0.02 ? 'dv-off' : '');
+  const toHex6 = (c) => {
+    const [r, g, b] = U.hexToRgb(c || '#ff8fc4');
+    return U.rgbToHex(r, g, b);
+  };
+  const msgRow = (w) => `<div class="dv-msg dv-${esc(w.level)}"><i title="${LEVEL_NAME[w.level] || ''}"></i><span>${esc(w.msg)}</span></div>`;
+  const stat = (v, label, cls) => `<div class="dv-stat"><b class="${cls || ''}">${U.fmt(v)}</b><span>${label}</span></div>`;
+  const copyBtn = (act) => `<button class="btn btn-secondary btn-xs" data-act="${act}">Копировать</button>`;
+
+  /* ---------- состояние (живёт, пока открыта вкладка браузера) ---------- */
+  const S = {
+    tab: 'check',
+    allMsgs: false,
+    chars: { open: false, demo: false, page: 0 },
+    sim: { caseId: '', n: 10000 },
+  };
   const draft = {
-    ch: { name: '', id: '', idTouched: false, rarity: 'rare', series: '', description: '', image: '', value: '', cases: [], look: { hair: '#ff9ecf', eyes: '#3b82f6', skin: '#ffe9de', outfit: '#1e293b', accent: '#ec4899', style: 'long', acc: 'none', clothes: 'sailor', mouth: 'smile', expr: 'normal' } },
-    cs: { name: '', id: '', idTouched: false, description: '', price: 300, rtp: 90, currency: 'coins', color: '#ff6fb5', emblem: 'star', category: 'standard', badge: '', requiredLevel: 1, cooldown: '', image: '', featured: false, items: [], weights: {}, pityCount: '', pityRarity: 'legendary' },
+    ch: { name: '', id: '', idTouched: false, rarity: 'rare', image: '', series: '', description: '', value: '', cases: [] },
+    cs: { from: '', name: '', id: '', idTouched: false, requiredLevel: 1, price: 100, rtp: 90, risk: 'mid', cooldown: 60, image: '', color: '#ff8fc4', weights: {}, items: [], extra: [], q: '', demo: null },
   };
 
-  /* ============================== Проверка данных ============================== */
-  let showDemo = false;
-  function renderCheck(host) {
-    const warnings = App.data.warnings;
-    const icon = { error: '❌', warn: '⚠️', info: 'ℹ️' };
-    const counts = { error: 0, warn: 0, info: 0 };
-    warnings.forEach((w) => counts[w.level]++);
-    host.innerHTML = `
-      <div class="dev-summary">
-        <div class="stat panel"><span class="stat-ico">👧</span><div><div class="stat-v">${App.data.chars.length}</div><div class="stat-l">персонажей</div></div></div>
-        <div class="stat panel"><span class="stat-ico">🎁</span><div><div class="stat-v">${App.data.cases.length}</div><div class="stat-l">кейсов</div></div></div>
-        <div class="stat panel"><span class="stat-ico">❌</span><div><div class="stat-v">${counts.error}</div><div class="stat-l">ошибок</div></div></div>
-        <div class="stat panel"><span class="stat-ico">⚠️</span><div><div class="stat-v">${counts.warn}</div><div class="stat-l">предупреждений</div></div></div>
+  /* ============================== Проверка ============================== */
+  function renderCheck(body) {
+    const D = App.data;
+    const count = { error: 0, warn: 0, info: 0 };
+    D.warnings.forEach((w) => (count[w.level] = (count[w.level] || 0) + 1));
+    const msgs = D.warnings.slice().sort((a, b) => (LEVEL_ORDER[a.level] || 0) - (LEVEL_ORDER[b.level] || 0));
+    const shown = S.allMsgs ? msgs : msgs.slice(0, MSG_LIMIT);
+    const own = D.chars.filter((c) => !c.demo).length;
+    const demo = D.chars.length - own;
+    body.innerHTML = `
+      <div class="dv-stats">
+        ${stat(D.chars.length, 'персонажей')}
+        ${stat(D.cases.length, 'кейсов')}
+        ${stat(count.error, 'ошибок', count.error ? 'bad' : '')}
+        ${stat(count.warn, 'предупреждений', count.warn ? 'dv-off' : '')}
       </div>
+
       <section class="section">
         <div class="section-head"><h2>Сообщения</h2></div>
-        <div class="panel warn-list">${warnings.length ? warnings.map((w) => `<div class="warn-row w-${w.level}"><span>${icon[w.level]}</span><div>${esc(w.msg)}</div></div>`).join('') : '<div class="good">✅ Всё отлично — ошибок в данных нет</div>'}</div>
+        ${
+          msgs.length
+            ? `<div class="panel dv-msgs">${shown.map(msgRow).join('')}${
+                msgs.length > shown.length ? `<button class="btn btn-secondary btn-sm dv-more" data-act="all-msgs">Показать все (${msgs.length})</button>` : ''
+              }</div>`
+            : `<div class="panel dv-ok">${ui.svg('check')}<span>Ошибок в данных нет</span></div>`
+        }
       </section>
+
       <section class="section">
-        <div class="section-head"><h2>Кейсы: шансы и окупаемость</h2><span class="muted small">RTP — сколько в среднем возвращается игроку от цены кейса</span></div>
-        <div class="panel table-wrap"><table class="table">
-          <thead><tr><th>Ур.</th><th>Кейс</th><th>id</th><th>Цена</th><th>Персонажей</th><th>Средний дроп</th><th>RTP (цель)</th><th>RTP (факт)</th><th>Гарант</th></tr></thead>
-          <tbody>${App.data.cases
-            .slice()
-            .sort((a, b) => a.requiredLevel - b.requiredLevel || App.data.priceInCoins(a) - App.data.priceInCoins(b))
-            .map((cs) => {
-              const ev = App.data.caseEV(cs);
-              const rtp = App.data.caseRTP(cs);
-              const cls = rtp == null ? '' : rtp > 1 ? 'bad' : rtp >= 0.8 ? 'good' : 'warn';
-              return `<tr data-goto="case/${esc(cs.id)}"><td>${cs.requiredLevel}</td><td><b>${esc(cs.name)}</b>${cs.demo ? ' <span class="tag">демо</span>' : ''}</td><td><code>${esc(cs.id)}</code></td><td>${cs.price ? ui.cur(cs.price, cs.currency) : 'бесплатно'}</td><td>${cs.pool.length}</td><td>${ui.cur(Math.round(ev))}</td><td>${cs.price ? U.pct(cs.rtp, 1) : '—'}</td><td class="${cls}">${rtp == null ? '—' : U.pct(rtp, 1)}</td><td>${cs.pity ? `${cs.pity.count} → ${esc(cs.pity.rarity)}` : '—'}</td></tr>`;
-            })
-            .join('')}</tbody></table></div>
-        <p class="small muted">RTP — окупаемость: какая доля цены кейса в среднем возвращается игроку. Цены персонажей подгоняются под RTP (цель) автоматически. Если факт отличается — у кого-то из персонажей задана своя <code>value</code> или персонаж «домашний» в другом кейсе.</p>
+        <div class="section-head"><h2>Кейсы</h2><span class="small muted">RTP — какая доля цены кейса в среднем возвращается игроку</span></div>
+        <div class="dv-table-wrap">${casesTable()}</div>
       </section>
+
       <section class="section">
-        <div class="section-head"><h2>Персонажи</h2><button class="btn btn-ghost btn-sm" data-act="checkimg">🖼️ Проверить картинки</button></div>
-        <div class="panel table-wrap"><table class="table">
-          <thead><tr><th></th><th>Имя</th><th>id</th><th>Редкость</th><th>Цена</th><th>Кейсы</th><th>Откуда</th><th>Картинка</th></tr></thead>
-          <tbody>${App.data.chars
-            .filter((c) => showDemo || !c.demo)
-            .map(
-              (c) => `<tr class="r-${c.rarity}"><td><img class="tbl-ava" src="${esc(App.art.portrait(c))}" data-cid="${esc(c.id)}" alt=""></td><td><b>${esc(c.name)}</b></td><td><code>${esc(c.id)}</code></td><td><span class="rtag r-${c.rarity}">${esc(c.r.name)}</span></td><td>${U.fmt(c.value)}${c.fixedValue != null ? ' <small class="muted">своя</small>' : ''}</td><td>${c.inCases.length ? c.inCases.map((k) => `<code${k === c.home ? ' title="домашний кейс — от него считается цена"' : ''}>${k === c.home ? '🏠' : ''}${esc(k)}</code>`).join(' ') : '<span class="warn">нет</span>'}</td><td>${{ manual: 'characters.js', folder: '📁 папка', demo: '<span class="muted">демо</span>' }[c._source] || ''}</td><td data-img="${esc(c.id)}">${c.image ? `<span class="muted">${esc(decodeURIComponent(c.image))}</span>` : '🎨 нарисована'}</td></tr>`
-            )
-            .join('')}</tbody></table></div>
-        <label class="switch-row mt"><input type="checkbox" data-act="toggledemo"${showDemo ? ' checked' : ''}><span class="switch"></span>Показывать демо-персонажей (${App.data.chars.filter((c) => c.demo).length})</label>
+        <details class="dv-details" data-chars-box${S.chars.open ? ' open' : ''}>
+          <summary>
+            <h2>Персонажи</h2>
+            <span class="small muted">${own} ${U.plural(own, ['свой', 'своих', 'своих'])}${demo ? ` · ${demo} демо` : ''}</span>
+            ${ui.svg('next', 'dv-chev')}
+          </summary>
+          <div class="dv-details-body" data-chars></div>
+        </details>
       </section>`;
-  }
-  function checkImages(host) {
-    App.data.chars.forEach((c) => {
-      if (!c.image) return;
-      const cell = host.querySelector(`[data-img="${CSS.escape(c.id)}"]`);
-      const img = new Image();
-      img.onload = () => cell && (cell.innerHTML = `✅ <span class="muted">${esc(c.image)}</span> <span class="small muted">${img.naturalWidth}×${img.naturalHeight}</span>`);
-      img.onerror = () => cell && (cell.innerHTML = `❌ <span class="bad">не найдена: ${esc(c.image)}</span>`);
-      img.src = c.image;
+
+    const box = body.querySelector('[data-chars-box]');
+    const host = body.querySelector('[data-chars]');
+    if (S.chars.open) renderChars(host);
+    // toggle не всплывает — вешаем прямо на <details>
+    box.addEventListener('toggle', () => {
+      S.chars.open = box.open;
+      if (box.open && !host.childElementCount) renderChars(host);
     });
+  }
+
+  function casesTable() {
+    const D = App.data;
+    return `<table class="dv-table">
+      <thead><tr><th class="num">Ур.</th><th>Кейс</th><th>id</th><th>Цена</th><th class="num">Персонажей</th><th>Средний дроп</th><th class="num">RTP цель</th><th class="num">RTP факт</th></tr></thead>
+      <tbody>${sortedCases()
+        .map((cs) => {
+          const rtp = D.caseRTP(cs);
+          const tags = (cs.demo ? '<span class="dv-tag">демо</span>' : '') + (cs.hidden ? '<span class="dv-tag">скрыт</span>' : '');
+          return `<tr>
+            <td class="num">${cs.requiredLevel}</td>
+            <td><div class="dv-case-cell"><a class="dv-case" href="#/case/${esc(cs.id)}">${ui.caseImg(cs)}<span>${esc(cs.name)}</span></a>${tags}</div></td>
+            <td><code>${esc(cs.id)}</code></td>
+            <td>${cs.price ? ui.cur(cs.price) : '<span class="muted">бесплатно</span>'}</td>
+            <td class="num">${cs.pool.length}</td>
+            <td>${cs.pool.length ? ui.cur(D.caseEV(cs)) : '—'}</td>
+            <td class="num">${cs.price ? U.pct(cs.rtp, 1) : '—'}</td>
+            <td class="num ${rtpClass(rtp, cs.rtp)}">${rtp == null ? '—' : U.pct(rtp, 1)}</td>
+          </tr>`;
+        })
+        .join('')}</tbody>
+    </table>`;
+  }
+
+  function renderChars(host) {
+    const D = App.data;
+    const demoN = D.chars.filter((c) => c.demo).length;
+    const list = D.chars.filter((c) => S.chars.demo || !c.demo);
+    const pages = Math.max(1, Math.ceil(list.length / PAGE_SIZE));
+    S.chars.page = U.clamp(S.chars.page, 0, pages - 1);
+    const from = S.chars.page * PAGE_SIZE;
+    const rows = list.slice(from, from + PAGE_SIZE);
+    host.innerHTML = `
+      ${demoN ? `<label class="switch-row dv-switch"><input type="checkbox" data-act="chars-demo"${S.chars.demo ? ' checked' : ''}><span class="switch"></span><span>Показывать демо-персонажей (${demoN})</span></label>` : ''}
+      ${
+        rows.length
+          ? `<div class="dv-table-wrap"><table class="dv-table">
+              <thead><tr><th>Имя</th><th>id</th><th>Редкость</th><th>Домашний кейс</th><th>Цена</th><th>Откуда</th></tr></thead>
+              <tbody>${rows.map(charRow).join('')}</tbody>
+            </table></div>`
+          : `<p class="muted dv-note">Своих персонажей пока нет — кейсы заполнены демо. Положи картинки в папку <code>characters/</code> или создай персонажа во вкладке «Персонаж».</p>`
+      }
+      ${
+        pages > 1
+          ? `<div class="dv-pager">
+              <button class="btn btn-secondary btn-sm" data-page="-1"${S.chars.page ? '' : ' disabled'}>${ui.svg('back')}Назад</button>
+              <span class="small muted">${from + 1}–${from + rows.length} из ${list.length}</span>
+              <button class="btn btn-secondary btn-sm" data-page="1"${S.chars.page < pages - 1 ? '' : ' disabled'}>Дальше${ui.svg('next')}</button>
+            </div>`
+          : ''
+      }`;
+  }
+
+  function charRow(c) {
+    const home = c.home ? App.data.getCase(c.home) : null;
+    return `<tr>
+      <td class="dv-strong">${esc(c.name)}</td>
+      <td><code>${esc(c.id)}</code></td>
+      <td>${ui.rarityTag(c)}</td>
+      <td>${home ? esc(home.name) : '<span class="bad">нет</span>'}${c.inCases.length > 1 ? ` <span class="dim">+${c.inCases.length - 1}</span>` : ''}</td>
+      <td>${ui.cur(c.value)}${c.fixedValue != null ? '<span class="dv-tag">своя</span>' : ''}</td>
+      <td class="muted">${SOURCE[c._source] || '—'}</td>
+    </tr>`;
   }
 
   /* ============================== Персонаж ============================== */
   function charObj() {
     const d = draft.ch;
-    const o = { id: d.id || U.slug(d.name) || 'new_character', name: d.name || 'Новый персонаж', rarity: d.rarity };
-    if (d.image) o.image = d.image;
-    if (d.series) o.series = d.series;
-    if (d.description) o.description = d.description;
-    if (d.cases.length) o.cases = d.cases.slice();
-    if (d.value !== '' && !isNaN(d.value)) o.value = Number(d.value);
-    if (!d.image) o.look = Object.assign({}, d.look);
+    const o = { id: d.id.trim() || U.slug(d.name) || 'new_character', name: d.name.trim() || 'Новый персонаж', rarity: d.rarity };
+    if (d.image.trim()) o.image = d.image.trim();
+    if (d.series.trim()) o.series = d.series.trim();
+    if (d.description.trim()) o.description = d.description.trim();
+    const cases = d.cases.filter((id) => App.data.getCase(id));
+    if (cases.length) o.cases = cases;
+    const v = num(d.value);
+    if (v > 0) o.value = Math.round(v);
     return o;
   }
+
   function charCode() {
     const o = charObj();
-    const lines = [`  {`, `    id: ${jsStr(o.id)},`, `    name: ${jsStr(o.name)},`, `    rarity: ${jsStr(o.rarity)},`];
-    if (o.image) lines.push(`    image: ${jsStr(o.image)},`);
-    if (o.series) lines.push(`    series: ${jsStr(o.series)},`);
-    if (o.description) lines.push(`    description: ${jsStr(o.description)},`);
-    if (o.cases) lines.push(`    cases: [${o.cases.map(jsStr).join(', ')}],`);
-    if (o.value != null) lines.push(`    value: ${o.value},`);
-    if (o.look) {
-      const L = o.look;
-      lines.push(`    look: { ${Object.keys(L).map((k) => `${k}: ${jsStr(L[k])}`).join(', ')} },`);
-    }
-    lines.push('  },');
-    return lines.join('\n');
+    const L = ['  {', `    id: ${jsStr(o.id)},`, `    name: ${jsStr(o.name)},`, `    rarity: ${jsStr(o.rarity)},`];
+    if (o.cases) L.push(`    cases: [${o.cases.map(jsStr).join(', ')}],`);
+    if (o.image) L.push(`    image: ${jsStr(o.image)},`);
+    if (o.series) L.push(`    series: ${jsStr(o.series)},`);
+    if (o.description) L.push(`    description: ${jsStr(o.description)},`);
+    if (o.value != null) L.push(`    value: ${o.value},`);
+    L.push('  },');
+    return L.join('\n');
   }
-  function charPreview() {
-    const o = charObj();
-    const r = App.data.getRarity(o.rarity) || App.data.rarities[0];
-    const fake = { id: o.id, rarity: r.id, r, look: o.look || {} };
-    const src = o.image || svgUri(App.art.svg.portrait(fake));
-    const value = o.value != null ? o.value : App.data.estimateValue(o.cases && o.cases[0], r.id);
-    const cs = o.cases && App.data.getCase(o.cases[0]);
-    return `<div class="ccard r-${r.id} t${r.index} lg${r.rainbow ? ' rainbow' : ''}"><div class="ccard-art"><img src="${esc(src)}" alt="" data-preview></div><div class="ccard-shine"></div><div class="ccard-info"><div class="ccard-name">${esc(o.name)}</div><div class="ccard-meta"><span class="ccard-rar">${esc(r.name)}</span><span class="ccard-val">${ui.cur(value, 'coins', { short: true })}</span></div></div></div>
-      <div class="small muted center">${o.value != null ? 'Своя цена' : cs ? `Цена ≈ ${ui.cur(value)} — считается от кейса «${esc(cs.name)}» и редкости` : 'Выбери кейс — цена посчитается от него'}</div>`;
-  }
-  const opts = (list, cur) => list.map((v) => (Array.isArray(v) ? v : [v, v])).map(([v, l]) => `<option value="${esc(v)}"${String(v) === String(cur) ? ' selected' : ''}>${esc(l)}</option>`).join('');
 
-  function renderCharForm(host) {
+  function caseChecks(selected) {
+    return groupByLevel(sortedCases())
+      .map(
+        ([lvl, list]) => `<div class="dv-lvl">
+          <div class="dv-lvl-h">Уровень ${lvl}</div>
+          <div class="dv-checks">${list
+            .map(
+              (cs) => `<label class="dv-check"><input type="checkbox" data-ccase="${esc(cs.id)}"${selected.includes(cs.id) ? ' checked' : ''}><span>${ui.caseImg(cs)}<span>${esc(cs.name)}</span></span></label>`
+            )
+            .join('')}</div>
+        </div>`
+      )
+      .join('');
+  }
+
+  function renderCharTab(body) {
     const d = draft.ch;
-    const P = PAL();
-    host.innerHTML = `
-      <div class="dev-form">
-        <div class="panel form-panel">
-          <h3>Новый персонаж</h3>
-          <div class="form-grid">
-            <label class="field"><span>Имя *</span><input class="input" data-c="name" value="${esc(d.name)}" placeholder="Например: Рем"></label>
-            <label class="field"><span>id (латиницей) *</span><input class="input" data-c="id" value="${esc(d.id)}" placeholder="rem"></label>
-            <label class="field"><span>Редкость *</span><select class="select" data-c="rarity">${opts(App.data.rarities.map((r) => [r.id, r.name]), d.rarity)}</select></label>
-            <label class="field"><span>Своя цена (необязательно)</span><input class="input" type="number" min="0" data-c="value" value="${esc(d.value)}" placeholder="по редкости"></label>
-            <label class="field span2"><span>Картинка (путь к файлу)</span><input class="input" data-c="image" value="${esc(d.image)}" placeholder="assets/characters/rem.png"><small class="muted">Положи файл в папку <code>assets/characters/</code>. Пусто — нарисуется заглушка.</small><small class="bad" data-imgerr hidden>Картинка не найдена по этому пути</small></label>
-            <label class="field span2"><span>Серия / тайтл</span><input class="input" data-c="series" value="${esc(d.series)}" list="dev-series" placeholder="Re:Zero"><datalist id="dev-series">${App.data.seriesList().map((s) => `<option value="${esc(s)}">`).join('')}</datalist></label>
-            <label class="field span2"><span>Описание</span><textarea class="input" rows="2" data-c="description" placeholder="Пара строк о персонаже">${esc(d.description)}</textarea></label>
+    const D = App.data;
+    if (!D.getRarity(d.rarity)) d.rarity = D.rarities[Math.min(2, D.rarities.length - 1)].id;
+    body.innerHTML = `
+      <div class="panel dv-tip">
+        <b>Проще всего — папкой.</b>
+        <span>Положи картинку в <code>characters/&lt;NN-кейс&gt;/&lt;N-редкость&gt;/Имя.png</code> и запусти <code>node tools/import-characters.js</code> — или просто отправь файлы на GitHub, сборка импортирует их сама. Форма ниже — чтобы добавить персонажа вручную через <code>data/characters.js</code>.</span>
+      </div>
+
+      <div class="dv-layout">
+        <div class="panel dv-form">
+          <div class="dv-grid">
+            <label class="field"><span>Имя</span><input class="input" data-c="name" value="${esc(d.name)}" placeholder="Например: Рем" maxlength="60"></label>
+            <label class="field"><span>id (латиницей)</span><input class="input" data-c="id" value="${esc(d.id)}" placeholder="rem" maxlength="60" spellcheck="false" autocapitalize="off"></label>
+            <label class="field"><span>Редкость</span><select class="select" data-c="rarity">${opts(D.rarities.map((r) => [r.id, r.name]), d.rarity)}</select></label>
+            <label class="field"><span>Своя цена (необязательно)</span><input class="input" type="number" min="0" inputmode="numeric" data-c="value" value="${esc(d.value)}" placeholder="посчитается сама"></label>
+            <label class="field dv-span2"><span>Картинка</span><input class="input" data-c="image" value="${esc(d.image)}" placeholder="assets/characters/rem.png" spellcheck="false" autocapitalize="off"></label>
+            <label class="field dv-span2"><span>Серия (необязательно)</span><input class="input" data-c="series" value="${esc(d.series)}" placeholder="Re:Zero" list="dv-series"><datalist id="dv-series">${D.seriesList()
+              .map((s) => `<option value="${esc(s)}">`)
+              .join('')}</datalist></label>
+            <label class="field dv-span2"><span>Описание (необязательно)</span><textarea class="input" rows="2" data-c="description" placeholder="Пара строк о персонаже">${esc(d.description)}</textarea></label>
           </div>
-          <div class="field"><span>В какой кейс положить (первый отмеченный — «домашний», от него считается цена)</span><div class="check-list">${App.data.cases
-            .slice()
-            .sort((a, b) => a.requiredLevel - b.requiredLevel || a.price - b.price)
-            .map((cs) => `<label class="check"><input type="checkbox" data-ccase="${esc(cs.id)}"${d.cases.includes(cs.id) ? ' checked' : ''}><span>${esc(cs.name)} <small class="muted">ур. ${cs.requiredLevel}${cs.demo ? ' · демо' : ''}</small></span></label>`)
-            .join('')}</div></div>
-          <details class="look-box"${d.image ? '' : ' open'}>
-            <summary>🎨 Внешность заглушки (если нет картинки)</summary>
-            <div class="form-grid">
-              ${['hair', 'eyes', 'skin', 'outfit', 'accent'].map((k) => `<label class="field"><span>${{ hair: 'Волосы', eyes: 'Глаза', skin: 'Кожа', outfit: 'Одежда', accent: 'Акцент' }[k]}</span><input type="color" class="color" data-look="${k}" value="${esc(d.look[k])}"></label>`).join('')}
-              <label class="field"><span>Причёска</span><select class="select" data-look="style">${opts(P.style, d.look.style)}</select></label>
-              <label class="field"><span>Аксессуар</span><select class="select" data-look="acc">${opts(['none', 'catears', 'foxears', 'bunny', 'horns', 'bow', 'flower', 'clip', 'glasses', 'headphones', 'halo', 'tiara'], d.look.acc)}</select></label>
-              <label class="field"><span>Одежда</span><select class="select" data-look="clothes">${opts(P.clothes, d.look.clothes)}</select></label>
-              <label class="field"><span>Рот</span><select class="select" data-look="mouth">${opts(['smile', 'open', 'cat', 'smug', 'o'], d.look.mouth)}</select></label>
-              <label class="field"><span>Глаза</span><select class="select" data-look="expr">${opts(['normal', 'happy', 'wink'], d.look.expr)}</select></label>
-            </div>
-            <button class="btn btn-ghost btn-sm" data-act="randlook">🎲 Случайная внешность</button>
-          </details>
+          <div class="dv-sub">Кейсы <small>Первый отмеченный — «домашний»: от его цены считается цена персонажа.</small></div>
+          <div class="dv-case-checks">${caseChecks(d.cases)}</div>
         </div>
-        <div class="dev-side">
-          <div class="panel preview-panel"><div class="muted small">Предпросмотр</div><div data-cprev></div></div>
-          <div class="panel code-panel">
-            <div class="code-head"><b>Код для data/characters.js</b><button class="btn btn-ghost btn-sm" data-act="copych">📋 Копировать</button></div>
-            <pre class="code" data-ccode></pre>
-            <p class="small muted">Вставь этот код внутрь массива <code>GAME_DATA.characters = [ ... ]</code> в файле <code>data/characters.js</code> и обнови страницу.</p>
-            <button class="btn btn-primary btn-block" data-act="testch">▶️ Добавить в игру для теста</button>
-            <p class="small muted">Тестовое добавление работает до перезагрузки страницы.</p>
+
+        <div class="dv-side">
+          <div class="panel dv-preview" data-prev data-cprev></div>
+          <div class="panel dv-code-panel">
+            <div class="dv-code-head"><b>Код для data/characters.js</b>${copyBtn('copy-ch')}</div>
+            <pre class="dv-code" data-ccode></pre>
+            <p class="small muted">Вставь внутрь <code>GAME_DATA.characters = [ … ]</code> и обнови страницу.</p>
+            <button class="btn btn-primary btn-block" data-act="test-ch">Добавить в игру для теста</button>
+            <p class="small dim">Тестовое добавление действует до перезагрузки страницы.</p>
           </div>
         </div>
       </div>`;
-    refreshChar(host);
+    refreshChar(body);
   }
-  function refreshChar(host) {
-    host.querySelector('[data-cprev]').innerHTML = charPreview();
-    host.querySelector('[data-ccode]').textContent = charCode();
-    const img = host.querySelector('[data-cprev] img');
-    const err = host.querySelector('[data-imgerr]');
-    if (err) err.hidden = true;
-    if (img && draft.ch.image) img.addEventListener('error', () => err && (err.hidden = false), { once: true });
+
+  function charPreviewHtml() {
+    const D = App.data;
+    const o = charObj();
+    const r = D.getRarity(o.rarity) || D.rarities[0];
+    const gen = App.art.generated({ id: o.id, rarity: r.id, r });
+    const est = (o.cases || []).map((id) => ({ cs: D.getCase(id), v: D.estimateValue(id, r.id) }));
+    const value = o.value != null ? o.value : est.length ? est[0].v : D.estimateValue(null, r.id);
+    const ex = D.getChar(o.id);
+    return `
+      <div class="dv-prev-card">
+        <div class="ccard xl r-${r.id} t${r.index}">
+          <div class="ccard-art"><img src="${esc(o.image || gen)}" data-gen="${esc(gen)}" alt="" draggable="false"></div>
+          <div class="ccard-info"><div class="ccard-name">${esc(o.name)}</div><div class="ccard-val">${ui.cur(value, { short: true })}</div></div>
+        </div>
+        <div class="dv-prev-meta">${ui.rarityTag(r)}${o.series ? `<span class="muted small">${esc(o.series)}</span>` : ''}</div>
+        <div class="small bad" data-img-err hidden>Картинка не найдена: ${esc(o.image || '')}</div>
+        ${ex && !ex.demo && draft.ch.name.trim() ? `<div class="small muted">Персонаж с id «${esc(o.id)}» уже есть — тест заменит его.</div>` : ''}
+      </div>
+      <div class="dv-vals">
+        <div class="dv-vals-h">Цена по кейсам</div>
+        ${o.value != null ? `<div class="dv-val"><span>Своя цена</span>${ui.cur(o.value)}</div>` : ''}
+        ${est
+          .map(
+            ({ cs, v }, i) =>
+              `<div class="dv-val${o.value != null || i > 0 ? ' dv-val-alt' : ''}"><span>${esc(cs.name)}${i === 0 && est.length > 1 ? ' <small>домашний</small>' : ''}</span>${ui.cur(v)}</div>`
+          )
+          .join('')}
+        ${!est.length && o.value == null ? '<p class="small muted">Отметь кейс — цена посчитается от его цены и редкости.</p>' : ''}
+      </div>`;
+  }
+  function refreshChar(body) {
+    const prev = body.querySelector('[data-cprev]');
+    const code = body.querySelector('[data-ccode]');
+    if (prev) prev.innerHTML = charPreviewHtml();
+    if (code) code.textContent = charCode();
   }
 
   /* ============================== Кейс ============================== */
   function caseObj() {
     const d = draft.cs;
-    const o = { id: d.id || U.slug(d.name) || 'new_case', name: d.name || 'Новый кейс' };
-    if (d.description) o.description = d.description;
-    o.price = Math.max(0, Number(d.price) || 0);
-    o.currency = d.currency;
-    if (Number(d.rtp) > 0) o.rtp = Math.round(Number(d.rtp)) / 100;
+    const o = { id: d.id.trim() || U.slug(d.name) || 'new_case', name: d.name.trim() || 'Новый кейс' };
+    o.requiredLevel = Math.max(1, Math.round(num(d.requiredLevel)) || 1);
+    o.price = Math.max(0, Math.round(num(d.price)) || 0);
+    const rtp = num(d.rtp);
+    if (rtp > 0) o.rtp = Math.round(rtp * 10) / 1000;
+    if (o.price > 0) o.risk = d.risk;
+    else if (num(d.cooldown) > 0) o.cooldown = Math.round(num(d.cooldown));
+    if (d.image.trim()) o.image = d.image.trim();
     o.color = d.color;
-    if (d.image) o.image = d.image;
-    else o.emblem = d.emblem;
-    o.category = d.category;
-    if (d.badge) o.badge = d.badge;
-    if (d.featured) o.featured = true;
-    if (Number(d.requiredLevel) > 1) o.requiredLevel = Number(d.requiredLevel);
-    if (Number(d.cooldown) > 0) o.cooldown = Number(d.cooldown);
-    o.items = d.items.slice();
     const w = {};
-    Object.keys(d.weights).forEach((k) => {
-      if (d.weights[k] !== '' && !isNaN(d.weights[k])) w[k] = Number(d.weights[k]);
+    App.data.rarities.forEach((r) => {
+      const v = num(d.weights[r.id]);
+      if (v >= 0) w[r.id] = v;
     });
     if (Object.keys(w).length) o.rarityWeights = w;
-    if (Number(d.pityCount) > 0) o.pity = { count: Number(d.pityCount), rarity: d.pityRarity };
+    const items = d.extra.concat(d.items.filter((id) => App.data.getChar(id)));
+    if (items.length) o.items = items;
     return o;
   }
+
+  const itemStr = (it) => (typeof it === 'string' ? jsStr(it) : `{ id: ${jsStr(it.id)}${it.weight != null ? `, weight: ${Number(it.weight)}` : ''} }`);
   function caseCode() {
     const o = caseObj();
     const L = ['  {'];
     Object.keys(o).forEach((k) => {
       const v = o[k];
-      if (k === 'items') {
-        const chunks = [];
-        for (let i = 0; i < v.length; i += 6) chunks.push(v.slice(i, i + 6).map(jsStr).join(', '));
-        L.push(`    items: [${chunks.length > 1 ? '\n      ' + chunks.join(',\n      ') + ',\n    ' : chunks.join('')}],`);
-      } else if (k === 'rarityWeights') L.push(`    rarityWeights: { ${Object.keys(v).map((r) => `${r}: ${v[r]}`).join(', ')} },`);
-      else if (k === 'pity') L.push(`    pity: { count: ${v.count}, rarity: ${jsStr(v.rarity)} },`);
-      else if (typeof v === 'string') L.push(`    ${k}: ${jsStr(v)},`);
-      else L.push(`    ${k}: ${v},`);
+      if (k === 'rarityWeights') {
+        const parts = Object.keys(v).map((r) => `${r}: ${v[r]}`);
+        if (parts.join(', ').length <= 44) L.push(`    rarityWeights: { ${parts.join(', ')} },`);
+        else {
+          L.push('    rarityWeights: {');
+          for (let i = 0; i < parts.length; i += 3) L.push('      ' + parts.slice(i, i + 3).join(', ') + ',');
+          L.push('    },');
+        }
+      } else if (k === 'items') {
+        const parts = v.map(itemStr);
+        if (parts.join(', ').length <= 46) L.push(`    items: [${parts.join(', ')}],`);
+        else {
+          // переносим строки по ширине, чтобы код читался без горизонтальной прокрутки
+          L.push('    items: [');
+          let line = '';
+          parts.forEach((p) => {
+            if (line && line.length + p.length + 2 > 46) {
+              L.push('      ' + line + ',');
+              line = '';
+            }
+            line += (line ? ', ' : '') + p;
+          });
+          if (line) L.push('      ' + line + ',');
+          L.push('    ],');
+        }
+      } else L.push(`    ${k}: ${typeof v === 'string' ? jsStr(v) : v},`);
     });
     L.push('  },');
     return L.join('\n');
   }
-  function renderCaseForm(host) {
+
+  // заполнить форму существующим кейсом
+  function loadCase(id) {
     const d = draft.cs;
-    const byR = App.data.rarities.map((r) => ({ r, chars: App.data.byRarity(r.id) })).filter((x) => x.chars.length);
-    host.innerHTML = `
-      <div class="dev-form">
-        <div class="panel form-panel">
-          <h3>Новый кейс</h3>
-          <div class="form-grid">
-            <label class="field"><span>Название *</span><input class="input" data-k="name" value="${esc(d.name)}" placeholder="Кейс «Неко»"></label>
-            <label class="field"><span>id (латиницей) *</span><input class="input" data-k="id" value="${esc(d.id)}" placeholder="neko2"></label>
-            <label class="field"><span>Цена</span><input class="input" type="number" min="0" data-k="price" value="${esc(d.price)}"></label>
-            <label class="field"><span>Валюта</span><select class="select" data-k="currency">${opts([['coins', 'Монеты'], ['gems', 'Кристаллы']], d.currency)}</select></label>
-            <label class="field"><span>Окупаемость, % (rtp)</span><input class="input" type="number" min="10" max="200" data-k="rtp" value="${esc(d.rtp)}"><small class="muted">Цены персонажей кейса подстроятся под неё</small></label>
-            <label class="field"><span>Цвет</span><input type="color" class="color" data-k="color" value="${esc(d.color)}"></label>
-            <label class="field"><span>Значок на коробке</span><select class="select" data-k="emblem">${opts(['star', 'heart', 'moon', 'paw', 'flower', 'crown', 'gem', 'fire'], d.emblem)}</select></label>
-            <label class="field"><span>Категория</span><select class="select" data-k="category">${opts([['free', 'Бесплатные'], ['standard', 'Обычные'], ['theme', 'Тематические'], ['event', 'Ивенты'], ['premium', 'Премиум']], d.category)}</select></label>
-            <label class="field"><span>Наклейка</span><input class="input" data-k="badge" value="${esc(d.badge)}" placeholder="NEW, HOT…"></label>
-            <label class="field"><span>С какого уровня</span><input class="input" type="number" min="1" data-k="requiredLevel" value="${esc(d.requiredLevel)}"></label>
-            <label class="field"><span>Перезарядка, мин (для бесплатных)</span><input class="input" type="number" min="0" data-k="cooldown" value="${esc(d.cooldown)}" placeholder="—"></label>
-            <label class="field span2"><span>Картинка кейса (необязательно)</span><input class="input" data-k="image" value="${esc(d.image)}" placeholder="assets/cases/neko.png"></label>
-            <label class="field span2"><span>Описание</span><input class="input" data-k="description" value="${esc(d.description)}"></label>
-            <label class="check span2"><input type="checkbox" data-k="featured"${d.featured ? ' checked' : ''}><span>Показывать на главной</span></label>
+    const raw = (G.cases || []).find((c) => c && String(c.id) === id);
+    const cs = App.data.getCase(id);
+    if (!raw || !cs) return;
+    const items = Array.isArray(raw.items) ? raw.items.filter((it) => it != null && it !== '') : [];
+    const isChar = (it) => typeof it === 'string' && !!App.data.getChar(it);
+    const weights = {};
+    Object.keys(raw.rarityWeights || {}).forEach((k) => (weights[k] = String(raw.rarityWeights[k])));
+    Object.assign(d, {
+      from: id,
+      name: cs.name,
+      id: cs.id,
+      idTouched: true,
+      requiredLevel: cs.requiredLevel,
+      price: cs.price,
+      rtp: raw.rtp != null ? Math.round(cs.rtp * 1000) / 10 : '',
+      risk: cs.risk || 'mid',
+      cooldown: cs.cooldown || 60,
+      image: raw.image || '',
+      color: toHex6(cs.color),
+      weights,
+      items: items.filter(isChar),
+      extra: items.filter((it) => !isChar(it)),
+      q: '',
+    });
+  }
+  function resetCase() {
+    Object.assign(draft.cs, { from: '', name: '', id: '', idTouched: false, requiredLevel: 1, price: 100, rtp: 90, risk: 'mid', cooldown: 60, image: '', color: '#ff8fc4', weights: {}, items: [], extra: [], q: '' });
+  }
+
+  const pickDemo = () => (draft.cs.demo != null ? draft.cs.demo : !App.data.chars.some((c) => !c.demo));
+
+  function renderCaseTab(body) {
+    const d = draft.cs;
+    const D = App.data;
+    const demoN = D.chars.filter((c) => c.demo).length;
+    const free = Math.round(num(d.price)) === 0;
+    body.innerHTML = `
+      <div class="dv-layout">
+        <div class="panel dv-form">
+          <label class="field dv-from"><span>Основа</span><select class="select" data-k="from"><option value="">Новый кейс</option>${groupByLevel(sortedCases())
+            .map(([lvl, list]) => `<optgroup label="Уровень ${lvl}">${list.map((cs) => `<option value="${esc(cs.id)}"${cs.id === d.from ? ' selected' : ''}>${esc(cs.name)}</option>`).join('')}</optgroup>`)
+            .join('')}</select></label>
+          <div class="dv-grid">
+            <label class="field"><span>Название</span><input class="input" data-k="name" value="${esc(d.name)}" placeholder="Например: Кошачья коробка" maxlength="60"></label>
+            <label class="field"><span>id (латиницей)</span><input class="input" data-k="id" value="${esc(d.id)}" placeholder="neko-box" maxlength="60" spellcheck="false" autocapitalize="off"></label>
+            <label class="field"><span>С какого уровня</span><input class="input" type="number" min="1" max="${CFG.levels.max}" inputmode="numeric" data-k="requiredLevel" value="${esc(d.requiredLevel)}"></label>
+            <label class="field"><span>Цена (0 — бесплатный)</span><input class="input" type="number" min="0" inputmode="numeric" data-k="price" value="${esc(d.price)}"></label>
+            <label class="field"><span>Окупаемость, %</span><input class="input" type="number" min="1" max="200" step="0.5" inputmode="decimal" data-k="rtp" value="${esc(d.rtp)}" placeholder="${Math.round(((CFG.economy && CFG.economy.defaultRtp) || 0.9) * 100)}"></label>
+            ${
+              free
+                ? `<label class="field"><span>Перезарядка, мин</span><input class="input" type="number" min="0" inputmode="numeric" data-k="cooldown" value="${esc(d.cooldown)}"></label>`
+                : `<label class="field"><span>Разброс</span><select class="select" data-k="risk">${opts(RISKS, d.risk)}</select></label>`
+            }
+            <label class="field dv-span2"><span>Картинка</span><input class="input" data-k="image" value="${esc(d.image)}" placeholder="assets/cases/neko-box.webp" spellcheck="false" autocapitalize="off"></label>
+            <label class="field dv-span2"><span>Цвет подсветки</span><span class="dv-color"><input type="color" data-k="color" value="${esc(toHex6(d.color))}"><code data-color-text>${esc(toHex6(d.color))}</code></span></label>
           </div>
-          <div class="field"><span data-itemcount>Персонажи в кейсе (${d.items.length})</span></div>
-          <div class="pick-chars">${byR
+
+          <div class="dv-sub">Шансы редкостей <small>Пусто — как в config.js. Шанс редкости делится поровну между её персонажами в кейсе.</small></div>
+          <div class="dv-grid dv-grid-3">${D.rarities
             .map(
-              ({ r, chars }) => `<div class="pick-group r-${r.id}"><div class="pick-group-head"><span class="rtag r-${r.id}">${esc(r.name)}</span><button class="btn btn-xs btn-ghost" data-allr="${r.id}">все</button><button class="btn btn-xs btn-ghost" data-noner="${r.id}">никого</button></div>
-              <div class="pick-group-list">${chars
-                .map((c) => `<label class="pick-char${d.items.includes(c.id) ? ' on' : ''}"><input type="checkbox" data-item="${esc(c.id)}"${d.items.includes(c.id) ? ' checked' : ''}><img src="${esc(App.art.portrait(c))}" data-cid="${esc(c.id)}" alt=""><span>${esc(c.name)}</span></label>`)
-                .join('')}</div></div>`
+              (r) => `<label class="field r-${r.id}"><span class="dv-rlabel"><i></i>${esc(r.name)}</span><input class="input" type="number" min="0" step="any" inputmode="decimal" data-w="${r.id}" value="${esc(d.weights[r.id] != null ? d.weights[r.id] : '')}" placeholder="${r.weight}"></label>`
             )
             .join('')}</div>
-          <details class="look-box">
-            <summary>🎯 Шансы редкостей и гарант (необязательно)</summary>
-            <p class="small muted">Вес редкости делится поровну между её персонажами в кейсе. Пусто — стандартный вес из config.js.</p>
-            <div class="form-grid">${App.data.rarities
-              .map((r) => `<label class="field"><span class="r-${r.id}" style="color:var(--rc)">${esc(r.name)}</span><input class="input" type="number" min="0" step="0.1" data-w="${r.id}" value="${esc(d.weights[r.id] != null ? d.weights[r.id] : '')}" placeholder="${r.weight}"></label>`)
-              .join('')}</div>
-            <div class="form-grid">
-              <label class="field"><span>Гарант: через N открытий</span><input class="input" type="number" min="0" data-k="pityCount" value="${esc(d.pityCount)}" placeholder="нет"></label>
-              <label class="field"><span>Гарант: редкость</span><select class="select" data-k="pityRarity">${opts(App.data.rarities.map((r) => [r.id, r.name]), d.pityRarity)}</select></label>
-            </div>
-          </details>
+
+          <div class="dv-sub">Персонажи <small data-items-count>${itemsCountText()}</small></div>
+          <div class="dv-pick-tools">
+            <input class="input" type="search" data-q value="${esc(d.q)}" placeholder="Поиск по имени или id">
+            ${demoN ? `<label class="switch-row dv-switch"><input type="checkbox" data-act="pick-demo"${pickDemo() ? ' checked' : ''}><span class="switch"></span><span>Демо</span></label>` : ''}
+          </div>
+          <div class="dv-pick" data-pick></div>
         </div>
-        <div class="dev-side">
-          <div class="panel preview-panel"><div class="muted small">Предпросмотр</div><div data-kprev></div></div>
-          <div class="panel code-panel">
-            <div class="code-head"><b>Код для data/cases.js</b><button class="btn btn-ghost btn-sm" data-act="copycs">📋 Копировать</button></div>
-            <pre class="code" data-kcode></pre>
-            <p class="small muted">Вставь внутрь массива <code>GAME_DATA.cases = [ ... ]</code> в файле <code>data/cases.js</code>.</p>
-            <button class="btn btn-primary btn-block" data-act="testcs">▶️ Добавить в игру для теста</button>
+
+        <div class="dv-side">
+          <div class="panel dv-preview" data-prev data-kprev></div>
+          <div class="panel dv-code-panel">
+            <div class="dv-code-head"><b>Код для data/cases.js</b>${copyBtn('copy-cs')}</div>
+            <pre class="dv-code" data-kcode></pre>
+            <p class="small muted">Вставь внутрь <code>GAME_DATA.cases = [ … ]</code> (или замени старый кейс с тем же id) и обнови страницу.</p>
+            <button class="btn btn-primary btn-block" data-act="test-cs">Добавить для теста</button>
+            <p class="small dim">Тестовое добавление действует до перезагрузки страницы.</p>
           </div>
         </div>
       </div>`;
-    refreshCase(host);
+    renderPick(body.querySelector('[data-pick]'));
+    refreshCase(body);
   }
-  function refreshCase(host) {
+
+  function itemsCountText() {
+    const d = draft.cs;
+    const n = d.items.length;
+    return `Выбрано: ${n}${d.extra.length ? ` · ещё ${d.extra.length} ${U.plural(d.extra.length, ['правило', 'правила', 'правил'])} из кода` : ''}`;
+  }
+
+  let pickGroups = {}; // редкость → id видимых в списке персонажей (для «Все» / «Снять»)
+  function renderPick(host) {
+    if (!host) return;
+    const d = draft.cs;
+    const D = App.data;
+    const showDemo = pickDemo();
+    const q = d.q.trim().toLowerCase();
+    pickGroups = {};
+    const groups = D.rarities
+      .map((r) => ({
+        r,
+        list: D.chars.filter(
+          (c) => c.rarity === r.id && (showDemo || !c.demo || d.items.includes(c.id)) && (!q || c.name.toLowerCase().includes(q) || c.id.toLowerCase().includes(q))
+        ),
+      }))
+      .filter((g) => g.list.length);
+    groups.forEach((g) => (pickGroups[g.r.id] = g.list.map((c) => c.id)));
+    host.innerHTML = groups.length
+      ? groups
+          .map(
+            ({ r, list }) => `<div class="dv-pick-group">
+              <div class="dv-pick-head">${ui.rarityTag(r)}<span class="dim small">${list.length}</span><span class="dv-spacer"></span><button class="btn btn-secondary btn-xs" data-all="${r.id}">Все</button><button class="btn btn-secondary btn-xs" data-none="${r.id}">Снять</button></div>
+              <div class="dv-checks">${list
+                .map(
+                  (c) =>
+                    `<label class="dv-check r-${c.rarity}"><input type="checkbox" data-item="${esc(c.id)}"${d.items.includes(c.id) ? ' checked' : ''}><span><i class="dv-dot"></i><span>${esc(c.name)}</span></span></label>`
+                )
+                .join('')}</div>
+            </div>`
+          )
+          .join('')
+      : `<p class="small muted dv-pick-empty">${q ? 'Никого не найдено' : 'Своих персонажей пока нет. Включи «Демо» или добавь персонажей через папку characters/.'}</p>`;
+  }
+
+  function casePreviewHtml() {
+    const D = App.data;
+    const d = draft.cs;
     const o = caseObj();
-    const { cs, warnings } = App.data.previewCase(o);
-    const art = o.image || svgUri(App.art.svg.caseBox(Object.assign({}, o, { emblem: o.emblem || 'star' })));
-    let html = `<div class="case-card static" style="--cc:${esc(o.color)}"><span class="case-glow"></span>${o.badge ? `<span class="case-badge">${esc(o.badge)}</span>` : ''}<div class="case-art"><img src="${esc(art)}" alt=""></div><div class="case-name">${esc(o.name)}</div><div class="case-price">${o.price ? ui.cur(o.price, o.currency) : '<span class="free-tag">Бесплатно</span>'}</div></div>`;
-    if (cs && cs.pool.length) {
-      const ev = cs.previewEV || 0;
-      const priceCoins = App.data.priceInCoins(cs);
-      const rtp = priceCoins > 0 ? ev / priceCoins : null;
-      html += `<div class="prev-stats"><div>Средний дроп: <b>${ui.cur(Math.round(ev))}</b></div><div>RTP: <b class="${rtp == null ? '' : rtp > 1 ? 'bad' : rtp >= 0.85 ? 'good' : 'warn'}">${rtp == null ? '—' : U.pct(rtp, 1)}</b></div></div>`;
-      html += `<div class="chance-list">${cs.pool.map((e) => {
-        const c = App.data.getChar(e.cid);
-        return `<div class="chance-row r-${c.rarity}"><i class="dot"></i><span>${esc(c.name)}</span><small class="muted">${U.short(cs.previewValues[e.cid] || 0)}</small><b>${U.pct(e.chance)}</b></div>`;
-      }).join('')}</div>`;
-    } else html += '<div class="muted small mt">Выбери персонажей, чтобы увидеть шансы</div>';
-    if (warnings.length) html += warnings.map((w) => `<div class="small ${w.level === 'error' ? 'bad' : 'warn'}">⚠️ ${esc(w.msg)}</div>`).join('');
-    host.querySelector('[data-kprev]').innerHTML = html;
-    host.querySelector('[data-kcode]').textContent = caseCode();
+    const { cs, warnings } = D.previewCase(o);
+    let ws = warnings.slice();
+    if (cs && !cs.pool.length) ws = ws.filter((w) => !/пустой/.test(w.msg));
+    if (/[^a-z0-9_-]/i.test(o.id)) ws.unshift({ level: 'warn', msg: 'id лучше писать латиницей без пробелов, например neko-box' });
+    if (D.getCase(o.id) && d.from !== o.id) ws.unshift({ level: 'info', msg: `Кейс с id «${o.id}» уже есть — тест заменит его` });
+    if (o.price === 0 && !o.cooldown) ws.push({ level: 'warn', msg: 'Бесплатный кейс без перезарядки можно открывать бесконечно' });
+
+    const gen = App.art.caseGenerated(cs || o);
+    const price = cs ? cs.price : o.price;
+    const hasPool = !!(cs && cs.pool.length);
+    const ev = hasPool ? cs.previewEV || 0 : 0;
+    const rtp = hasPool && price > 0 ? ev / price : null;
+    const risk = RISKS.find(([k]) => k === o.risk);
+    if (rtp != null && Math.abs(rtp - cs.rtp) > 0.02) {
+      ws.push({ level: 'info', msg: 'Окупаемость не совпадает с целью: цены подстраиваются только у персонажей, для которых этот кейс «домашний». Остальные уже оценены в своих кейсах.' });
+    }
+
+    let html = `<div class="dv-cprev">
+        <img class="dv-cprev-img" src="${esc(o.image || gen)}" data-gen="${esc(gen)}" alt="" draggable="false">
+        <div class="dv-cprev-info">
+          <div class="dv-cprev-name">${esc(o.name)}</div>
+          <div class="small muted">Уровень ${o.requiredLevel}${o.price > 0 && risk ? ' · ' + risk[1].toLowerCase() : o.cooldown ? ` · раз в ${o.cooldown} мин` : ''}</div>
+          <div class="dv-cprev-price">${price > 0 ? ui.cur(price) : 'Бесплатно'}</div>
+        </div>
+      </div>
+      <div class="small bad" data-img-err hidden>Картинка не найдена: ${esc(o.image || '')}</div>`;
+
+    if (hasPool) {
+      const rows = D.rarities
+        .map((r) => {
+          const es = cs.pool.filter((e) => D.getChar(e.cid).rarity === r.id);
+          if (!es.length) return '';
+          const chance = es.reduce((s, e) => s + e.chance, 0);
+          const vals = es.map((e) => cs.previewValues[e.cid] || 0);
+          const lo = Math.min.apply(null, vals);
+          const hi = Math.max.apply(null, vals);
+          return `<tr><td>${ui.rarityTag(r)}</td><td class="num">${es.length}</td><td class="num">${U.pct(chance)}</td><td><span class="dv-range">${ui.cur(lo)}${hi > lo ? `<span class="dim">– ${U.fmt(hi)}</span>` : ''}</span></td></tr>`;
+        })
+        .join('');
+      html += `<div class="dv-kv">
+          <div><span>Средний дроп</span>${ui.cur(ev)}</div>
+          <div><span>RTP</span><b class="${rtpClass(rtp, cs.rtp)}">${rtp == null ? '—' : U.pct(rtp, 1)}</b></div>
+          <div><span>Персонажей</span><b>${cs.pool.length}</b></div>
+        </div>
+        <div class="dv-table-wrap dv-flat"><table class="dv-table dv-mini">
+          <thead><tr><th>Редкость</th><th class="num">Перс.</th><th class="num">Шанс</th><th>Цена</th></tr></thead>
+          <tbody>${rows}</tbody>
+        </table></div>`;
+    } else {
+      html += `<p class="small muted dv-hint">Отметь персонажей. Можно оставить пустым — тогда кейс заполнится демо-персонажами, а своих добавишь через папку <code>characters/</code>.</p>`;
+    }
+    if (ws.length) html += `<div class="dv-msgs dv-flat">${ws.map(msgRow).join('')}</div>`;
+    return html;
+  }
+
+  function refreshCase(body) {
+    const prev = body.querySelector('[data-kprev]');
+    const code = body.querySelector('[data-kcode]');
+    const cnt = body.querySelector('[data-items-count]');
+    if (prev) prev.innerHTML = casePreviewHtml();
+    if (code) code.textContent = caseCode();
+    if (cnt) cnt.textContent = itemsCountText();
   }
 
   /* ============================== Читы ============================== */
-  function renderCheats(host) {
-    host.innerHTML = `
-      <div class="settings-grid">
-        <section class="panel set-section">
-          <h3>💰 Валюта и уровень</h3>
-          <div class="btn-row">
-            <button class="btn btn-ghost" data-cheat="coins:1000">+1 000 ${ui.icon('coins')}</button>
-            <button class="btn btn-ghost" data-cheat="coins:100000">+100 000 ${ui.icon('coins')}</button>
-            <button class="btn btn-ghost" data-cheat="gems:100">+100 ${ui.icon('gems')}</button>
-            <button class="btn btn-ghost" data-cheat="dust:5000">+5 000 ${ui.icon('dust')}</button>
-            <button class="btn btn-ghost" data-cheat="level:1">+1 уровень</button>
-            <button class="btn btn-ghost" data-cheat="level:5">+5 уровней</button>
+  function renderCheats(body) {
+    const st = App.state;
+    const cases = sortedCases().filter((cs) => cs.pool.length);
+    if (!S.sim.caseId || !App.data.getCase(S.sim.caseId)) {
+      const first = cases.find((cs) => cs.price > 0) || cases[0];
+      S.sim.caseId = first ? first.id : '';
+    }
+    const resetRow = (key, title, desc, label) =>
+      `<div class="dv-reset"><div><b>${title}</b><span class="small muted">${desc}</span></div><button class="btn btn-secondary btn-sm" data-cheat="${key}">${label}</button></div>`;
+    body.innerHTML = `
+      <div class="dv-cheats">
+        <section class="panel dv-cheat">
+          <h3>Монеты</h3>
+          <p class="small muted">Сейчас: <span data-coins-now>${ui.cur(st.coins)}</span></p>
+          <div class="dv-row">
+            <button class="btn btn-secondary" data-cheat="coins" data-n="1000">${ui.cur(1000, { sign: true })}</button>
+            <button class="btn btn-secondary" data-cheat="coins" data-n="100000">${ui.cur(100000, { sign: true })}</button>
           </div>
         </section>
-        <section class="panel set-section">
-          <h3>👧 Выдать персонажа</h3>
-          <div class="row-sm">
-            <select class="select" data-givechar>${App.data.rarities
-              .map((r) => `<optgroup label="${esc(r.name)}">${App.data.byRarity(r.id).map((c) => `<option value="${esc(c.id)}">${esc(c.name)}</option>`).join('')}</optgroup>`)
-              .join('')}</select>
-            <label class="check"><input type="checkbox" data-giveshiny><span>✨ шайни</span></label>
-            <button class="btn btn-primary" data-cheat="give">Выдать</button>
+
+        <section class="panel dv-cheat">
+          <h3>Уровень</h3>
+          <p class="small muted">Сейчас: <b data-level-now>${st.level}</b>. Опыт обнулится.</p>
+          <div class="dv-row">
+            <input class="input dv-level-input" type="number" inputmode="numeric" min="1" max="${CFG.levels.max}" value="${st.level}" data-level>
+            <button class="btn btn-secondary" data-cheat="level">Установить</button>
           </div>
-          <button class="btn btn-ghost btn-sm mt" data-cheat="giveall">Выдать по одному каждого персонажа</button>
         </section>
-        <section class="panel set-section">
-          <h3>⏱️ Сбросить таймеры</h3>
-          <p class="set-desc">Бесплатные кейсы, ежедневная награда, бесплатное колесо, лимиты мемори, помощь при банкротстве.</p>
-          <button class="btn btn-ghost" data-cheat="timers">Сбросить</button>
-          <button class="btn btn-ghost" data-cheat="frames">Открыть все рамки</button>
+
+        <section class="panel dv-cheat dv-wide">
+          <h3>Симуляция открытий</h3>
+          <p class="small muted">Кейсы открываются понарошку: монеты не тратятся, персонажи не выдаются.</p>
+          ${
+            cases.length
+              ? `<div class="dv-row dv-sim-row">
+                  <select class="select" data-sim-case>${groupByLevel(cases)
+                    .map(([lvl, list]) => `<optgroup label="Уровень ${lvl}">${list.map((cs) => `<option value="${esc(cs.id)}"${cs.id === S.sim.caseId ? ' selected' : ''}>${esc(cs.name)}</option>`).join('')}</optgroup>`)
+                    .join('')}</select>
+                  <select class="select dv-sim-n" data-sim-n>${opts(SIM_N.map((n) => [n, '× ' + U.fmt(n)]), S.sim.n)}</select>
+                  <button class="btn btn-primary" data-cheat="sim">Открыть</button>
+                </div>
+                <div class="dv-sim-out" data-sim-out></div>`
+              : '<p class="small muted">Нет кейсов с персонажами.</p>'
+          }
         </section>
-        <section class="panel set-section">
-          <h3>🎲 Симуляция кейса</h3>
-          <p class="set-desc">Проверь, как часто что выпадает. Ничего не тратится и не выдаётся.</p>
-          <div class="row-sm">
-            <select class="select" data-simcase>${App.data.cases.map((cs) => `<option value="${esc(cs.id)}">${esc(cs.name)}</option>`).join('')}</select>
-            <select class="select" data-simn>${opts([[1000, '1 000'], [10000, '10 000'], [100000, '100 000']], 10000)}</select>
-            <button class="btn btn-primary" data-cheat="sim">Запустить</button>
+
+        <section class="panel dv-cheat dv-wide">
+          <h3>Сброс</h3>
+          <div class="dv-resets">
+            ${resetRow('collection', 'Коллекция', 'Кого ты выбивал и награды за собранные наборы', 'Очистить')}
+            ${resetRow('inventory', 'Инвентарь', `Сейчас персонажей: <span data-inv-now>${U.fmt(st.inventory.length)}</span>`, 'Очистить')}
+            ${resetRow('jackpot', 'Джекпот', 'Копилка вернётся к стартовой сумме', 'Сбросить')}
+            ${resetRow('timers', 'Таймеры', 'Бесплатный кейс и помощь, когда кончились монеты', 'Сбросить')}
           </div>
-          <div data-simout></div>
-        </section>
-        <section class="panel set-section">
-          <h3>🧹 Опасная зона</h3>
-          <button class="btn btn-danger" data-cheat="clearinv">Очистить инвентарь</button>
         </section>
       </div>`;
   }
-  function simulate(host) {
-    const cs = App.data.getCase(host.querySelector('[data-simcase]').value);
-    const n = Number(host.querySelector('[data-simn]').value);
-    if (!cs || !cs.pool.length) return;
-    const byR = {};
-    let shiny = 0;
+
+  function simulate(body) {
+    const D = App.data;
+    const cs = D.getCase(S.sim.caseId);
+    const out = body.querySelector('[data-sim-out]');
+    if (!cs || !cs.pool.length || !out) return;
+    const n = S.sim.n;
+    const got = {};
     let total = 0;
+    let best = null;
     for (let i = 0; i < n; i++) {
-      const r = App.cases.roll(cs);
-      const ch = App.data.getChar(r.cid);
-      byR[ch.rarity] = (byR[ch.rarity] || 0) + 1;
-      if (r.shiny) shiny++;
-      total += App.data.value(r.cid, r.shiny);
+      const cid = App.cases.roll(cs).cid;
+      const ch = D.getChar(cid);
+      got[ch.rarity] = (got[ch.rarity] || 0) + 1;
+      const v = D.value(cid);
+      total += v;
+      if (!best || v > best.v) best = { ch, v };
     }
     const exp = {};
     cs.pool.forEach((e) => {
-      const rid = App.data.getChar(e.cid).rarity;
-      exp[rid] = (exp[rid] || 0) + e.chance;
+      const r = D.getChar(e.cid).rarity;
+      exp[r] = (exp[r] || 0) + e.chance;
     });
-    const price = App.data.priceInCoins(cs);
-    host.querySelector('[data-simout]').innerHTML = `<table class="table mt"><thead><tr><th>Редкость</th><th>Ожидается</th><th>Выпало</th></tr></thead><tbody>${App.data.rarities
-      .filter((r) => exp[r.id])
-      .map((r) => `<tr><td><span class="rtag r-${r.id}">${esc(r.name)}</span></td><td>${U.pct(exp[r.id])}</td><td>${U.pct((byR[r.id] || 0) / n)} <span class="muted small">(${U.fmt(byR[r.id] || 0)})</span></td></tr>`)
-      .join('')}<tr><td>✨ Шайни</td><td>${U.pct(App.data.shinyChance(cs))}</td><td>${U.pct(shiny / n)} <span class="muted small">(${shiny})</span></td></tr></tbody></table>
-      <p class="small">Средний дроп: <b>${U.fmt(total / n)}</b>${price ? ` · окупаемость: <b>${U.pct(total / n / price, 1)}</b>` : ''}</p>`;
+    const avg = total / n;
+    out.innerHTML = `
+      <div class="dv-kv">
+        <div><span>Открыто</span><b>${U.fmt(n)}</b></div>
+        <div><span>Средний дроп</span>${ui.cur(avg)}</div>
+        <div><span>Окупаемость</span><b>${cs.price ? U.pct(avg / cs.price, 1) : '—'}</b></div>
+        <div><span>Лучший</span><b class="dv-best r-${best.ch.rarity}">${esc(best.ch.name)}</b></div>
+      </div>
+      <div class="dv-table-wrap"><table class="dv-table">
+        <thead><tr><th>Редкость</th><th class="num">Шанс</th><th class="num">Выпало</th><th class="num">Доля</th></tr></thead>
+        <tbody>${D.rarities
+          .filter((r) => exp[r.id] || got[r.id])
+          .map(
+            (r) =>
+              `<tr><td>${ui.rarityTag(r)}</td><td class="num">${U.pct(exp[r.id] || 0)}</td><td class="num">${U.fmt(got[r.id] || 0)}</td><td class="num">${U.pct((got[r.id] || 0) / n)}</td></tr>`
+          )
+          .join('')}</tbody>
+      </table></div>`;
+  }
+
+  function setLevel(lvl) {
+    const st = App.state;
+    st.level = U.clamp(Math.round(lvl) || 1, 1, CFG.levels.max);
+    st.xp = 0;
+    App.store.dirty();
+    App.bus.emit('levelup', { levels: [], level: st.level, features: [] });
+    App.shell.renderNav();
+    return st.level;
+  }
+
+  async function cheat(kind, btn, body) {
+    const st = App.state;
+    if (kind === 'coins') {
+      App.eco.add(Number(btn.dataset.n) || 0);
+      App.sfx.play('coin');
+    } else if (kind === 'level') {
+      const inp = body.querySelector('[data-level]');
+      const lvl = setLevel(Number(inp && inp.value));
+      if (inp) inp.value = lvl;
+      const now = body.querySelector('[data-level-now]');
+      if (now) now.textContent = lvl;
+      ui.toast(`Уровень ${lvl}`, 'good');
+    } else if (kind === 'sim') {
+      simulate(body);
+    } else if (kind === 'collection') {
+      if (!(await ui.confirm('Очистить коллекцию? Персонажи в инвентаре останутся, а награды за наборы можно будет получить снова.', { danger: true, ok: 'Очистить' }))) return;
+      st.collection = {};
+      st.collectionClaims = {};
+      st.collectionMilestones = {};
+      App.store.dirty();
+      App.bus.emit('inventory');
+      App.stats.touch();
+      ui.toast('Коллекция очищена', 'good');
+    } else if (kind === 'inventory') {
+      if (!st.inventory.length) return ui.toast('Инвентарь и так пуст', 'info');
+      if (!(await ui.confirm(`Удалить всех персонажей из инвентаря (${U.fmt(st.inventory.length)})?`, { danger: true, ok: 'Удалить' }))) return;
+      App.inv.remove(st.inventory.map((it) => it.uid));
+      ui.toast('Инвентарь очищен', 'good');
+    } else if (kind === 'jackpot') {
+      st.jackpot = null;
+      App.store.dirty();
+      ui.toast('Копилка джекпота сброшена', 'good');
+    } else if (kind === 'timers') {
+      st.cooldowns = {};
+      if (st.limits) delete st.limits.bankrupt;
+      App.store.dirty();
+      ui.toast('Таймеры сброшены', 'good');
+    }
   }
 
   /* ============================== Страница ============================== */
   App.router.register('dev', {
     title: 'Конструктор',
+    nav: 'dev',
     render(ctx) {
-      let tab = ctx.params[0] || 'check';
+      const el = ctx.el;
       if (!App.settings.devMode) {
-        ctx.el.innerHTML = `<div class="locked-page panel"><div class="locked-ico">🛠️</div><h2>Конструктор выключен</h2><p class="muted">Включи «Режим разработчика» в настройках, чтобы добавлять персонажей и кейсы прямо из игры.</p><button class="btn btn-primary" data-act="enable">Включить режим разработчика</button></div>`;
-        ctx.el.addEventListener('click', (e) => {
-          if (e.target.closest('[data-act="enable"]')) {
-            App.store.setSetting('devMode', true);
-            App.router.render();
-          }
-        });
+        el.innerHTML = `<div class="locked-page">
+          ${ui.svg('dev')}
+          <h2>Конструктор выключен</h2>
+          <p class="muted">Включи «Режим разработчика» в настройках, чтобы добавлять персонажей и кейсы.</p>
+          <a class="btn btn-primary" href="#/settings">Открыть настройки</a>
+        </div>`;
         return;
       }
-      ctx.el.innerHTML = `
-        <div class="page-head"><div><h1>🛠️ Конструктор</h1><p class="muted">Добавляй персонажей и кейсы, проверяй шансы и тестируй игру</p></div></div>
-        ${W.tabs([['check', '🔎 Проверка данных'], ['char', '👧 Персонаж'], ['case', '🎁 Кейс'], ['cheats', '🧪 Читы и тесты']], tab, 'data-devtabs')}
-        <div data-body></div>`;
-      const body = ctx.el.querySelector('[data-body]');
+
+      const fromHash = ctx.params[0];
+      if (fromHash && TABS.some(([id]) => id === fromHash)) S.tab = fromHash;
+
+      el.innerHTML = `
+        <div class="page-head"><div><h1>Конструктор</h1><p>Проверка данных, новые персонажи и кейсы, читы для тестов</p></div></div>
+        ${App.widgets.tabs(TABS, S.tab, 'data-dv-tabs')}
+        <div class="dv-body" data-body></div>`;
+      const body = el.querySelector('[data-body]');
+
       function render() {
-        ctx.el.querySelectorAll('[data-devtabs] .tab').forEach((t) => t.classList.toggle('active', t.dataset.tab === tab));
-        if (tab === 'check') renderCheck(body);
-        else if (tab === 'char') renderCharForm(body);
-        else if (tab === 'case') renderCaseForm(body);
+        el.querySelectorAll('[data-dv-tabs] .tab').forEach((t) => t.classList.toggle('active', t.dataset.tab === S.tab));
+        if (S.tab === 'check') renderCheck(body);
+        else if (S.tab === 'char') renderCharTab(body);
+        else if (S.tab === 'case') renderCaseTab(body);
         else renderCheats(body);
       }
       render();
 
-      ctx.el.addEventListener('input', (e) => {
+      // предпросмотр обновляется с небольшой задержкой, чтобы не дёргать картинки на каждую букву
+      const refreshCharSoon = U.debounce(() => ctx.alive && S.tab === 'char' && refreshChar(body), 120);
+      const refreshCaseSoon = U.debounce(() => ctx.alive && S.tab === 'case' && refreshCase(body), 120);
+      const renderPickSoon = U.debounce(() => ctx.alive && S.tab === 'case' && renderPick(body.querySelector('[data-pick]')), 120);
+
+      // данные пересобрались (например, после теста) — обновляем «Проверку»
+      ctx.on('data', () => {
+        if (S.tab === 'check') render();
+      });
+      ctx.on('balance', () => {
+        const n = body.querySelector('[data-coins-now]');
+        if (n) n.innerHTML = ui.cur(App.state.coins);
+      });
+      ctx.on('inventory', () => {
+        const n = body.querySelector('[data-inv-now]');
+        if (n) n.textContent = U.fmt(App.state.inventory.length);
+      });
+
+      // если картинка из формы не нашлась — показываем заглушку и подсказку
+      el.addEventListener(
+        'error',
+        (e) => {
+          const t = e.target;
+          if (!t || t.tagName !== 'IMG' || !t.dataset.gen || t.dataset.failed) return;
+          t.dataset.failed = '1';
+          t.src = t.dataset.gen;
+          const box = t.closest('[data-prev]');
+          const err = box && box.querySelector('[data-img-err]');
+          if (err) err.hidden = false;
+        },
+        true
+      );
+
+      /* ---------- поля форм ---------- */
+      function onField(e) {
         const t = e.target;
-        if (tab === 'char') {
+        const isToggle = t.type === 'checkbox' || t.tagName === 'SELECT' || t.type === 'color';
+        // флажки и списки — по change, текст — по input (цвет — по обоим)
+        if (e.type === 'input' && isToggle && t.type !== 'color') return;
+        if (e.type === 'change' && !isToggle) return;
+
+        if (t.dataset.act === 'chars-demo') {
+          S.chars.demo = t.checked;
+          S.chars.page = 0;
+          renderChars(body.querySelector('[data-chars]'));
+          return;
+        }
+
+        if (S.tab === 'char') {
           const d = draft.ch;
-          if (t.dataset.c) {
-            const k = t.dataset.c;
-            d[k] = t.value;
-            if (k === 'id') d.idTouched = !!t.value;
-            if (k === 'name' && !d.idTouched) {
-              d.id = U.slug(t.value);
-              const idInp = body.querySelector('[data-c="id"]');
-              if (idInp) idInp.value = d.id;
-            }
-          } else if (t.dataset.look) d.look[t.dataset.look] = t.value;
-          else return;
-          refreshChar(body);
-        } else if (tab === 'case') {
-          const d = draft.cs;
-          if (t.dataset.k) {
-            const k = t.dataset.k;
-            d[k] = t.type === 'checkbox' ? t.checked : t.value;
-            if (k === 'id') d.idTouched = !!t.value;
-            if (k === 'name' && !d.idTouched) {
-              d.id = U.slug(t.value);
-              const idInp = body.querySelector('[data-k="id"]');
-              if (idInp) idInp.value = d.id;
-            }
-          } else if (t.dataset.w) d.weights[t.dataset.w] = t.value;
-          else return;
-          refreshCase(body);
-        }
-      });
-      ctx.el.addEventListener('change', (e) => {
-        const t = e.target;
-        if (tab === 'char') {
           if (t.dataset.ccase) {
-            const d = draft.ch;
-            if (t.checked) d.cases.includes(t.dataset.ccase) || d.cases.push(t.dataset.ccase);
-            else d.cases = d.cases.filter((x) => x !== t.dataset.ccase);
+            const id = t.dataset.ccase;
+            d.cases = d.cases.filter((x) => x !== id);
+            if (t.checked) d.cases.push(id);
             refreshChar(body);
-          } else if (t.dataset.c === 'rarity' || t.dataset.look) {
-            if (t.dataset.look) draft.ch.look[t.dataset.look] = t.value;
-            else draft.ch.rarity = t.value;
-            refreshChar(body);
+            return;
           }
-        } else if (tab === 'case') {
+          const k = t.dataset.c;
+          if (!k) return;
+          d[k] = t.value;
+          if (k === 'id') d.idTouched = !!t.value.trim();
+          if (k === 'name' && !d.idTouched) {
+            d.id = U.slug(t.value);
+            const idInp = body.querySelector('[data-c="id"]');
+            if (idInp) idInp.value = d.id;
+          }
+          if (k === 'rarity') refreshChar(body);
+          else refreshCharSoon();
+          return;
+        }
+
+        if (S.tab === 'case') {
+          const d = draft.cs;
           if (t.dataset.item) {
-            const d = draft.cs;
-            if (t.checked) d.items.includes(t.dataset.item) || d.items.push(t.dataset.item);
-            else d.items = d.items.filter((x) => x !== t.dataset.item);
-            t.closest('.pick-char').classList.toggle('on', t.checked);
-            body.querySelector('[data-itemcount]').textContent = `Персонажи в кейсе (${d.items.length})`;
+            const id = t.dataset.item;
+            d.items = d.items.filter((x) => x !== id);
+            if (t.checked) d.items.push(id);
             refreshCase(body);
-          } else if (t.dataset.k) {
-            draft.cs[t.dataset.k] = t.type === 'checkbox' ? t.checked : t.value;
-            refreshCase(body);
+            return;
           }
+          if (t.dataset.act === 'pick-demo') {
+            d.demo = t.checked;
+            renderPick(body.querySelector('[data-pick]'));
+            return;
+          }
+          if (t.matches('[data-q]')) {
+            d.q = t.value;
+            renderPickSoon();
+            return;
+          }
+          if (t.dataset.w) {
+            d.weights[t.dataset.w] = t.value;
+            refreshCaseSoon();
+            return;
+          }
+          const k = t.dataset.k;
+          if (!k) return;
+          if (k === 'from') {
+            if (t.value) loadCase(t.value);
+            else resetCase();
+            renderCaseTab(body);
+            return;
+          }
+          const wasFree = Math.round(num(d.price)) === 0;
+          d[k] = t.value;
+          if (k === 'id') d.idTouched = !!t.value.trim();
+          if (k === 'name' && !d.idTouched) {
+            d.id = U.slug(t.value).replace(/_/g, '-');
+            const idInp = body.querySelector('[data-k="id"]');
+            if (idInp) idInp.value = d.id;
+          }
+          if (k === 'color') {
+            const txt = body.querySelector('[data-color-text]');
+            if (txt) txt.textContent = t.value;
+          }
+          // цена 0 ⇄ платный: меняется поле «Разброс» / «Перезарядка»
+          if (k === 'price' && wasFree !== (Math.round(num(d.price)) === 0)) {
+            const pos = t.selectionStart;
+            renderCaseTab(body);
+            const inp = body.querySelector('[data-k="price"]');
+            if (inp) {
+              inp.focus();
+              try { inp.setSelectionRange(pos, pos); } catch (err) { /* у number нет выделения */ }
+            }
+            return;
+          }
+          if (k === 'risk') refreshCase(body);
+          else refreshCaseSoon();
+          return;
+        }
+
+        if (S.tab === 'cheats') {
+          if (t.matches('[data-sim-case]')) S.sim.caseId = t.value;
+          else if (t.matches('[data-sim-n]')) S.sim.n = Number(t.value) || 10000;
+        }
+      }
+      el.addEventListener('input', onField);
+      el.addEventListener('change', onField);
+
+      el.addEventListener('keydown', (e) => {
+        if (e.key === 'Enter' && e.target.matches && e.target.matches('[data-level]')) {
+          e.preventDefault();
+          cheat('level', e.target, body);
         }
       });
-      ctx.el.addEventListener('click', async (e) => {
+
+      /* ---------- кнопки ---------- */
+      el.addEventListener('click', async (e) => {
         const t = e.target;
-        const tb = t.closest('[data-devtabs] [data-tab]');
+
+        const tb = t.closest('[data-dv-tabs] [data-tab]');
         if (tb) {
-          tab = tb.dataset.tab;
+          if (tb.dataset.tab === S.tab) return;
+          S.tab = tb.dataset.tab;
           App.sfx.play('soft');
           render();
           return;
         }
-        const go = t.closest('[data-goto]');
-        if (go) return App.router.go(go.dataset.goto);
-        const allr = t.closest('[data-allr]');
-        const noner = t.closest('[data-noner]');
-        if (allr || noner) {
-          const rid = (allr || noner).dataset.allr || (allr || noner).dataset.noner;
-          const ids = App.data.byRarity(rid).map((c) => c.id);
+
+        const pg = t.closest('[data-page]');
+        if (pg) {
+          S.chars.page += Number(pg.dataset.page) || 0;
+          const host = body.querySelector('[data-chars]');
+          renderChars(host);
+          const box = body.querySelector('[data-chars-box]');
+          if (box && box.getBoundingClientRect().top < 0) box.scrollIntoView({ block: 'start' });
+          return;
+        }
+
+        const all = t.closest('[data-all]');
+        const none = t.closest('[data-none]');
+        if (all || none) {
+          const ids = pickGroups[(all || none).dataset.all || (all || none).dataset.none] || [];
           const d = draft.cs;
-          if (allr) ids.forEach((id) => d.items.includes(id) || d.items.push(id));
+          if (all) ids.forEach((id) => d.items.includes(id) || d.items.push(id));
           else d.items = d.items.filter((id) => !ids.includes(id));
-          renderCaseForm(body);
+          renderPick(body.querySelector('[data-pick]'));
+          refreshCase(body);
           return;
         }
+
         const a = t.closest('[data-act]');
-        if (a) {
+        if (a && a.tagName === 'BUTTON') {
           const act = a.dataset.act;
-          if (act === 'toggledemo') {
-            showDemo = a.checked;
+          if (act === 'all-msgs') {
+            S.allMsgs = true;
             renderCheck(body);
-          } else if (act === 'checkimg') checkImages(body);
-          else if (act === 'randlook') {
-            const P = PAL();
-            const pick = (arr) => arr[Math.floor(Math.random() * arr.length)];
-            Object.assign(draft.ch.look, { hair: pick(P.hair), eyes: pick(P.eyes), skin: pick(P.skin), outfit: pick(P.outfit), accent: pick(P.accent), style: pick(P.style), acc: pick(P.acc), clothes: pick(P.clothes), mouth: pick(P.mouth), expr: pick(P.expr) });
-            renderCharForm(body);
-          } else if (act === 'copych' || act === 'copycs') {
-            const ok = await U.copy(act === 'copych' ? charCode() : caseCode());
-            ui.toast(ok ? 'Код скопирован! Вставь его в файл данных.' : 'Не удалось скопировать — выдели текст вручную', ok ? 'good' : 'bad');
-          } else if (act === 'testch') {
+          } else if (act === 'copy-ch' || act === 'copy-cs') {
+            const ok = await U.copy(act === 'copy-ch' ? charCode() : caseCode());
+            ui.toast(ok ? 'Код скопирован' : 'Не удалось скопировать — выдели текст вручную', ok ? 'good' : 'bad');
+          } else if (act === 'test-ch') {
+            if (!draft.ch.name.trim()) return ui.toast('Укажи имя персонажа', 'bad');
             const o = charObj();
-            if (!draft.ch.name) return ui.toast('Укажи имя персонажа', 'bad');
+            const demoCases = (o.cases || []).map((id) => App.data.getCase(id)).filter((cs) => cs && cs.demo);
             App.data.upsertCharacter(o);
-            ui.toast(`«${esc(o.name)}» добавлена в игру (до перезагрузки). ${o.cases ? 'Она уже есть в выбранных кейсах!' : 'Выбери кейсы, чтобы она выпадала.'}`, 'good', { timeout: 5000 });
-            renderCharForm(body);
-          } else if (act === 'testcs') {
+            let msg = `«${esc(o.name)}» добавлен(а) до перезагрузки.`;
+            if (!o.cases) msg += ' Отметь кейс, чтобы персонаж выпадал.';
+            else if (demoCases.length) msg += ` Демо из кейса «${esc(demoCases[0].name)}» убраны.`;
+            ui.toast(msg, 'good', { timeout: 5000 });
+            renderCharTab(body);
+          } else if (act === 'test-cs') {
+            if (!draft.cs.name.trim()) return ui.toast('Укажи название кейса', 'bad');
             const o = caseObj();
-            if (!draft.cs.name) return ui.toast('Укажи название кейса', 'bad');
-            if (!o.items.length) return ui.toast('Добавь в кейс хотя бы одного персонажа', 'bad');
             App.data.upsertCase(o);
-            ui.toast(`Кейс «${esc(o.name)}» добавлен (до перезагрузки)`, 'good', { onClick: () => App.router.go('case/' + o.id) });
-            renderCaseForm(body);
+            draft.cs.from = o.id;
+            ui.toast(`Кейс «${esc(o.name)}» добавлен до перезагрузки. Нажми, чтобы открыть.`, 'good', { timeout: 5000, onClick: () => App.router.go('case/' + o.id) });
+            renderCaseTab(body);
           }
           return;
         }
+
         const ch = t.closest('[data-cheat]');
-        if (!ch) return;
-        const [kind, arg] = ch.dataset.cheat.split(':');
-        const st = App.state;
-        if (kind === 'coins' || kind === 'gems' || kind === 'dust') App.eco.add(Number(arg), kind);
-        else if (kind === 'level') {
-          for (let i = 0; i < Number(arg); i++) App.eco.addXp(App.eco.xpNeeded(st.level) - st.xp, true);
-        } else if (kind === 'give') {
-          const cid = body.querySelector('[data-givechar]').value;
-          const shiny = body.querySelector('[data-giveshiny]').checked;
-          const it = App.inv.add(cid, { shiny, source: 'dev' });
-          ui.dropModal([it], { title: 'Выдано', firsts: new Set(App.inv.wasFirst(it) ? [it.uid] : []) });
-        } else if (kind === 'giveall') {
-          App.data.chars.forEach((c) => App.inv.add(c.id, { source: 'dev' }));
-          ui.toast(`Выдано ${App.data.chars.length} персонажей`, 'good');
-        } else if (kind === 'timers') {
-          st.cooldowns = {};
-          st.daily.last = null;
-          st.wheel.lastFree = null;
-          st.limits = {};
-          App.store.dirty();
-          App.bus.emit('badges');
-          ui.toast('Таймеры сброшены', 'good');
-        } else if (kind === 'frames') {
-          (GAME_DATA.config.frames || []).forEach((f) => st.owned.frames.includes(f.id) || st.owned.frames.push(f.id));
-          App.store.dirty();
-          ui.toast('Все рамки открыты', 'good');
-        } else if (kind === 'sim') simulate(body);
-        else if (kind === 'clearinv') {
-          if (await ui.confirm('Удалить всех персонажей из инвентаря?', { danger: true, ok: 'Удалить' })) {
-            App.inv.remove(st.inventory.map((it) => it.uid));
-            ui.toast('Инвентарь очищен', 'good');
-          }
+        if (ch) {
+          App.sfx.play('click');
+          await cheat(ch.dataset.cheat, ch, body);
         }
-        App.sfx.play('click');
       });
     },
   });

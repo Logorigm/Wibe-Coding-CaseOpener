@@ -1,172 +1,171 @@
-/* Мини-игра «Коинфлип»: дуэль один на один — выбираешь сторону, соперник ставит столько же,
- * победитель забирает банк (за вычетом комиссии). Выплата — data/config.js → games.coinflip.payout */
+/* Мини-игра «Коинфлип»: угадай сторону монеты. Играешь против казино.
+ * Выплата — data/config.js → games.coinflip.payout */
 (function () {
   'use strict';
   const App = window.App;
   const U = App.utils;
   const ui = App.ui;
-  const esc = U.esc;
   const CFG = GAME_DATA.config;
 
+  // Простые знаки сторон (без эмодзи)
+  const PETALS = [0, 72, 144, 216, 288].map((a) => `<ellipse cx="12" cy="6.6" rx="3.4" ry="4.9" transform="rotate(${a} 12 12)"/>`).join('');
   const SIDES = {
-    sakura: { name: 'Сакура', icon: '🌸' },
-    moon: { name: 'Луна', icon: '🌙' },
+    sakura: {
+      name: 'Сакура',
+      glyph: `<svg class="cf-glyph" viewBox="0 0 24 24" aria-hidden="true"><g fill="currentColor">${PETALS}</g><circle cx="12" cy="12" r="2.2" fill="#b8336f" fill-opacity=".5"/></svg>`,
+    },
+    moon: {
+      name: 'Луна',
+      glyph: '<svg class="cf-glyph" viewBox="0 0 24 24" aria-hidden="true"><path fill="currentColor" d="M15.2 2.6a9.6 9.6 0 1 0 6.3 14.6A7.9 7.9 0 0 1 15.2 2.6z"/></svg>',
+    },
   };
-  const other = (s) => (s === 'sakura' ? 'moon' : 'sakura');
-  const history = []; // { side, win }
+  const history = []; // { side, win } — новые в начале
+  let streak = 0;
 
   App.games.register({
     id: 'coinflip',
     name: 'Коинфлип',
-    icon: '🌗',
-    color: '#fbbf24',
-    short: 'Дуэль 50 на 50',
-    desc: 'Дуэль один на один: выбери сторону монеты, соперник ставит столько же. Победитель забирает банк!',
+    icon: 'coinflip',
+    short: 'Угадай сторону монеты',
     get rules() {
       const k = CFG.games.coinflip.payout;
-      return `<p>Выбери сторону — 🌸 Сакура или 🌙 Луна — и сделай ставку. Соперник займёт другую сторону и поставит столько же.</p>
-        <p>Монетка решает: победитель забирает банк — ставка × <b>${k}</b> (комиссия ${U.pct(1 - k / 2, 0)}).</p>
-        <p class="muted">Пробел — новая дуэль.</p>`;
+      return `<p>Выбери сторону — Сакура или Луна — и сделай ставку.</p>
+        <p>Угадал — получаешь ставку × <b>${k}</b>. Не угадал — ставка сгорает. Шанс 50 на 50.</p>`;
     },
     render(ctx, host) {
       const payoutMult = CFG.games.coinflip.payout;
-      let side = App.state.lastBets.coinSide || 'sakura';
-      let busy = false;
+      let side = SIDES[App.state.lastBets.coinSide] ? App.state.lastBets.coinSide : 'sakura';
       let rot = 0;
-      let streak = 0;
+      let pending = null; // бросок, который ещё не засчитан
+
       host.innerHTML = `
         <div class="game-layout">
           <div class="game-panel panel">
             <div data-bet></div>
-            <div class="field"><span>Твоя сторона</span>
-              <div class="side-pick">${Object.keys(SIDES).map((k) => `<button class="side-btn${k === side ? ' active' : ''}" data-side="${k}"><span>${SIDES[k].icon}</span>${SIDES[k].name}</button>`).join('')}</div>
+            <div class="field"><span>Сторона</span>
+              <div class="cf-sides">${Object.keys(SIDES)
+                .map((k) => `<button type="button" class="cf-side cf-${k}${k === side ? ' active' : ''}" data-side="${k}">${SIDES[k].glyph}<span>${SIDES[k].name}</span></button>`)
+                .join('')}</div>
             </div>
-            <button class="btn btn-primary btn-xl btn-block" data-go>⚔️ Начать дуэль</button>
-            <div class="game-info">
-              <span>Выигрыш: ставка × <b>${payoutMult}</b></span>
-              <span>Серия побед: <b data-streak>0</b></span>
-            </div>
+            <button class="btn btn-primary btn-xl btn-block" data-go>Подбросить</button>
+            <div class="game-note">Угадал — ставка × ${payoutMult}</div>
           </div>
-          <div class="game-stage panel coin-stage">
-            <div class="cf-duel">
-              <div class="cf-player" data-me></div>
-              <div class="coin-wrap"><div class="coin" data-coin>
-                <div class="coin-face coin-front">🌸</div>
-                <div class="coin-face coin-back">🌙</div>
+          <div class="game-main">
+            <div class="game-stage panel cf-stage">
+              <div class="cf-wrap"><div class="cf-coin" data-coin>
+                <div class="cf-face cf-sakura">${SIDES.sakura.glyph}</div>
+                <div class="cf-face cf-moon cf-back">${SIDES.moon.glyph}</div>
               </div></div>
-              <div class="cf-player" data-opp></div>
+              <div class="cf-hist" data-hist></div>
             </div>
-            <div class="coin-result" data-result>Выбери сторону и начни дуэль!</div>
-            <div class="coin-hist" data-hist></div>
+            <div class="game-result" data-result></div>
           </div>
         </div>`;
       const $ = (s) => host.querySelector(s);
       const bet = App.widgets.betInput($('[data-bet]'), { key: 'coinflip' });
+      const coin = $('[data-coin]');
+      const goBtn = $('[data-go]');
 
-      function playerHtml(o) {
-        const s = SIDES[o.side];
-        return `<div class="cf-ava">${o.avatar}<span class="cf-side">${s.icon}</span></div>
-          <b class="cf-name">${esc(o.name)}</b>
-          <span class="cf-bet">${o.bet ? ui.cur(o.bet) : '<span class="muted">—</span>'}</span>`;
-      }
-      function renderPlayers(opp, stake) {
-        const me = $('[data-me]');
-        me.innerHTML = playerHtml({ avatar: App.profile.avatarHtml('lg'), name: App.state.profile.name || 'Ты', side, bet: stake });
-        me.className = 'cf-player me side-' + side;
-        const op = $('[data-opp]');
-        op.innerHTML = opp
-          ? playerHtml({ avatar: App.games.botAvatar(opp.name, 'lg'), name: opp.name, side: other(side), bet: stake })
-          : `<div class="cf-ava cf-wait"><span class="avatar lg"><span class="avatar-letter">?</span></span><span class="cf-side">${SIDES[other(side)].icon}</span></div><b class="cf-name muted">Соперник</b><span class="cf-bet muted">ждёт ставку</span>`;
-        op.className = 'cf-player opp side-' + other(side) + (opp ? '' : ' waiting');
+      function setBusyUi(on) {
+        bet.disable(on);
+        goBtn.disabled = on;
+        host.querySelectorAll('[data-side]').forEach((x) => (x.disabled = on));
       }
       function renderHist() {
-        $('[data-hist]').innerHTML = history.map((h) => `<span class="ch-dot ${h.side}${h.win ? ' won' : ''}" title="${h.win ? 'Победа' : 'Поражение'}">${SIDES[h.side].icon}</span>`).join('');
-        $('[data-streak]').textContent = streak;
+        $('[data-hist]').innerHTML = history
+          .slice(0, 16)
+          .map((h) => `<i class="cf-dot cf-${h.side}${h.win ? ' won' : ''}" title="${SIDES[h.side].name}${h.win ? ' · победа' : ''}"></i>`)
+          .join('');
+      }
+      function idleText() {
+        const r = $('[data-result]');
+        r.className = 'game-result muted';
+        r.innerHTML = streak > 1 ? `Серия побед: ${streak}` : `Ты ставишь на: ${SIDES[side].name}`;
+      }
+      // показать монету нужной стороной без анимации
+      function face(s) {
+        rot = s === 'moon' ? 180 : 0;
+        coin.style.transition = 'none';
+        coin.style.transform = `rotateY(${rot}deg)`;
       }
 
-      async function duel() {
-        if (busy) return;
-        const b = bet.take();
-        if (b == null || !App.eco.spend(b, 'coins')) return;
-        busy = true;
-        bet.disable(true);
-        $('[data-go]').disabled = true;
-        host.querySelectorAll('[data-side]').forEach((x) => (x.disabled = true));
+      async function flip() {
+        if (pending) return;
+        const b = App.games.charge(bet);
+        if (b == null) return;
         const result = U.rand() < 0.5 ? 'sakura' : 'moon';
         const win = result === side;
         const payout = win ? Math.floor(b * payoutMult) : 0;
-        const opp = { name: U.pick(CFG.bots || ['Bot']) };
-        const coin = $('[data-coin]');
+        const p = (pending = { done: false });
+        // засчитываем один раз: после анимации или сразу, если игрок ушёл
+        p.settle = () => {
+          if (p.done) return;
+          p.done = true;
+          if (payout) App.eco.add(payout);
+          streak = win ? streak + 1 : 0;
+          if (win) App.stats.max('coinflipStreakMax', streak);
+          App.games.record('coinflip', b, payout);
+          history.unshift({ side: result, win });
+          if (history.length > 30) history.pop();
+          App.setBusy(false);
+        };
+        App.setBusy(true);
+        setBusyUi(true);
+        $('[data-result]').className = 'game-result muted';
+        $('[data-result]').textContent = 'Монета в воздухе…';
+        const dur = App.anim.dur(1600, 650);
+        const turns = dur ? 5 : 0;
+        rot = rot - (rot % 360) + 360 * turns + (result === 'moon' ? 180 : 0);
         coin.classList.remove('land');
-        host.querySelectorAll('.cf-player').forEach((p) => p.classList.remove('winner', 'loser'));
-        // ищем соперника
-        renderPlayers(null, b);
-        $('[data-result]').innerHTML = '<span class="muted">Ищем соперника…</span>';
-        const wait = App.anim.dur(U.randInt(500, 1200), 250);
-        if (wait) await U.sleep(wait);
-        if (ctx.alive) {
-          renderPlayers(opp, b);
-          App.sfx.play('pop');
-          $('[data-result]').innerHTML = `Банк: <b>${ui.cur(b * 2)}</b>`;
-        }
-        const dur = App.anim.dur(1800, 700);
-        if (ctx.alive) {
-          const base = rot - (rot % 360) + 360 * (dur ? 6 : 1);
-          rot = base + (result === 'moon' ? 180 : 0);
-          coin.style.transition = dur ? `transform ${dur}ms cubic-bezier(.2,.75,.25,1)` : 'none';
-          coin.style.transform = `rotateY(${rot}deg)`;
-          App.sfx.play('flip');
-          if (dur) {
-            const ticks = setInterval(() => ctx.alive && App.sfx.play('flip'), 220);
-            await U.sleep(dur);
-            clearInterval(ticks);
-          }
-        }
-        // результат засчитывается, даже если ушли со страницы во время броска
-        if (payout) App.eco.add(payout, 'coins');
-        streak = win ? streak + 1 : 0;
-        if (win) App.stats.max('coinflipStreakMax', streak);
-        App.games.record('coinflip', b, payout);
-        busy = false;
-        history.unshift({ side: result, win });
-        if (history.length > 16) history.pop();
+        coin.style.transition = dur ? `transform ${dur}ms cubic-bezier(.2,.7,.25,1)` : 'none';
+        coin.style.transform = `rotateY(${rot}deg)`;
+        App.sfx.play('flip');
+        if (dur) await U.sleep(dur);
+        p.settle();
+        pending = null;
         if (!ctx.alive) return;
         coin.classList.add('land');
-        bet.disable(false);
-        $('[data-go]').disabled = false;
-        host.querySelectorAll('[data-side]').forEach((x) => (x.disabled = false));
-        $('[data-me]').classList.add(win ? 'winner' : 'loser');
-        $('[data-opp]').classList.add(win ? 'loser' : 'winner');
+        setBusyUi(false);
         renderHist();
+        const r = $('[data-result]');
         if (win) {
           App.sfx.play('win');
-          App.fx.burstAt(coin, ['#fde68a', '#ff4fa3', '#fff'], 30);
-          $('[data-result]').innerHTML = `<span class="good">${SIDES[result].icon} ${SIDES[result].name}! Ты забираешь ${ui.cur(payout)}${streak > 1 ? ` · серия ${streak} 🔥` : ''}</span>`;
+          r.className = 'game-result';
+          r.innerHTML = `${SIDES[result].name}! Выигрыш <b class="good">${ui.cur(payout, { sign: true })}</b>${streak > 1 ? ` <span class="muted">· серия ${streak}</span>` : ''}`;
         } else {
           App.sfx.play('lose');
-          $('[data-result]').innerHTML = `<span class="bad">${SIDES[result].icon} ${SIDES[result].name}… Банк забирает ${esc(opp.name)}</span>`;
+          r.className = 'game-result';
+          r.innerHTML = `${SIDES[result].name}. <span class="muted">Ставка не сыграла</span>`;
         }
       }
 
       host.addEventListener('click', (e) => {
         const s = e.target.closest('[data-side]');
-        if (s && !busy) {
+        if (s) {
+          if (pending) return;
           side = s.dataset.side;
           App.state.lastBets.coinSide = side;
+          App.store.dirty();
           host.querySelectorAll('[data-side]').forEach((x) => x.classList.toggle('active', x === s));
           App.sfx.play('soft');
-          renderPlayers(null, 0);
+          face(side);
+          idleText();
           return;
         }
-        if (e.target.closest('[data-go]')) duel();
+        if (e.target.closest('[data-go]')) flip();
       });
       ctx.listen(document, 'keydown', (e) => {
-        if (e.code !== 'Space' || e.target.closest('input, select, textarea') || ui.topModal()) return;
+        if (e.code !== 'Space' || e.repeat || e.target.closest('input, select, textarea, button') || ui.topModal()) return;
         e.preventDefault();
-        duel();
+        flip();
       });
-      renderPlayers(null, 0);
+      ctx.onDestroy(() => {
+        if (pending) pending.settle();
+      });
+
+      face(history.length ? history[0].side : side);
       renderHist();
+      idleText();
     },
   });
 })();

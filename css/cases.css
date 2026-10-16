@@ -1,1 +1,202 @@
-/* cases */
+/* =====================================================================
+   КЕЙСЫ: главная (кейсы по уровням) и страница открытия кейса
+   ===================================================================== */
+
+/* ---------- главная ---------- */
+.page-cases .page-head { margin-bottom: 18px; }
+
+/* монеты закончились */
+.page-cases .bank {
+  display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap;
+  padding: 12px 14px 12px 16px; margin-bottom: 16px; border-radius: var(--r);
+  background: var(--surface); border: 1px solid var(--line); border-left: 3px solid var(--gold);
+}
+.page-cases .bank-text { display: flex; flex-direction: column; gap: 1px; min-width: 0; }
+.page-cases .bank-text span { color: var(--muted); font-size: 13.5px; }
+.page-cases .bank-timer { display: inline-flex; align-items: center; gap: 6px; color: var(--muted); font-weight: 800; font-size: 14px; font-variant-numeric: tabular-nums; }
+.page-cases .bank-timer .i { width: 16px; height: 16px; }
+
+/* подсказка новичку */
+.page-cases .onboard-hint { display: flex; align-items: center; gap: 8px; margin-bottom: 10px; color: var(--text); font-weight: 700; font-size: 14px; }
+.page-cases .onboard-hint .i { width: 18px; height: 18px; color: var(--accent); }
+
+/* бесплатный подарок */
+.page-cases .gift-list { display: flex; flex-direction: column; gap: 10px; }
+.page-cases .gift-card {
+  display: flex; align-items: center; gap: 14px; padding: 10px 14px 10px 10px; border-radius: var(--r);
+  background: var(--surface); border: 1px solid var(--line); transition: border-color 0.15s, background 0.15s;
+}
+.page-cases .gift-card:hover { background: var(--surface-2); border-color: var(--line-2); }
+.page-cases .gift-art { position: relative; width: 64px; height: 56px; flex: none; display: grid; place-items: center; }
+.page-cases .gift-art::before {
+  content: ''; position: absolute; inset: -6px; border-radius: 50%;
+  background: radial-gradient(closest-side, rgba(var(--cc-rgb), 0.3), rgba(var(--cc-rgb), 0));
+}
+.page-cases .gift-art img { position: relative; width: 100%; height: 100%; object-fit: contain; filter: drop-shadow(0 6px 8px rgba(0, 0, 0, 0.4)); }
+.page-cases .gift-body { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 1px; }
+.page-cases .gift-name { font-weight: 800; font-size: 16px; }
+.page-cases .gift-sub { color: var(--muted); font-size: 13.5px; }
+.page-cases .gift-act { flex: none; }
+.page-cases .gift-act .btn { min-width: 96px; }
+.page-cases .gift-timer { display: inline-flex; align-items: center; gap: 6px; color: var(--muted); font-weight: 800; font-size: 14px; font-variant-numeric: tabular-nums; }
+.page-cases .gift-timer .i { width: 16px; height: 16px; }
+.page-cases .gift-card.onboard { border-color: rgba(var(--accent-rgb), 0.55); animation: giftPulse 2.2s ease-out infinite; }
+@keyframes giftPulse {
+  0% { box-shadow: 0 0 0 0 rgba(var(--accent-rgb), 0.35); }
+  70% { box-shadow: 0 0 0 8px rgba(var(--accent-rgb), 0); }
+  100% { box-shadow: 0 0 0 0 rgba(var(--accent-rgb), 0); }
+}
+
+/* уровни */
+.page-cases .lvl-sec { margin-top: 30px; }
+.page-cases .lvl-head { display: flex; align-items: baseline; gap: 10px; margin-bottom: 12px; }
+.page-cases .lvl-head h2 { font-size: 18px; display: inline-flex; align-items: center; gap: 8px; }
+.page-cases .lvl-new { font-size: 13px; font-weight: 700; color: var(--muted); }
+
+.page-cases .cs-grid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 14px; }
+.page-cases .cs-card {
+  position: relative; display: flex; flex-direction: column; min-width: 0; padding: 12px 14px 14px; border-radius: var(--r);
+  background: var(--surface); border: 1px solid var(--line); transition: border-color 0.15s, background 0.15s, transform 0.15s;
+}
+.page-cases .cs-card:hover { background: var(--surface-2); border-color: var(--line-2); transform: translateY(-2px); }
+.page-cases .cs-art { position: relative; aspect-ratio: 4 / 3; margin-bottom: 10px; }
+.page-cases .cs-art::before {
+  content: ''; position: absolute; inset: 4% 8%; border-radius: 50%;
+  background: radial-gradient(closest-side, rgba(var(--cc-rgb), 0.28), rgba(var(--cc-rgb), 0));
+}
+.page-cases .cs-art img {
+  position: absolute; left: 10%; top: 5%; width: 80%; height: 90%; object-fit: contain; user-select: none;
+  filter: drop-shadow(0 10px 14px rgba(0, 0, 0, 0.45)); transition: transform 0.2s ease;
+}
+.page-cases .cs-card:hover .cs-art img { transform: scale(1.04); }
+.page-cases .cs-name { font-weight: 800; font-size: 15px; line-height: 1.25; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.page-cases .cs-price { margin-top: 3px; font-size: 14px; }
+
+/* следующий уровень (закрыт) */
+.page-cases .lvl-locked .lvl-head h2 { color: var(--muted); }
+.page-cases .lvl-locked .lvl-head .i { width: 18px; height: 18px; }
+.page-cases .lvl-lock-info { display: flex; flex-direction: column; gap: 8px; margin: -4px 0 14px; }
+.page-cases .lvl-lock-text { font-size: 14px; color: var(--muted); }
+.page-cases .lvl-lock-text span { color: var(--dim); }
+.page-cases .lvl-lock-info .bar { max-width: 260px; height: 4px; }
+.page-cases .cs-card.locked { background: transparent; }
+.page-cases .cs-card.locked:hover { background: var(--surface); transform: none; }
+.page-cases .cs-card.locked .cs-art::before { display: none; }
+.page-cases .cs-card.locked .cs-art img { filter: grayscale(1) brightness(0.75); opacity: 0.4; }
+.page-cases .cs-card.locked .cs-name { color: var(--muted); }
+.page-cases .cs-card.locked .cs-price { opacity: 0.6; }
+.page-cases .cs-lock { position: absolute; top: 0; right: 0; color: var(--dim); }
+.page-cases .cs-lock .i { width: 18px; height: 18px; }
+
+/* ранние кейсы (свёрнуты) */
+.page-cases .early { margin-top: 30px; border-top: 1px solid var(--line); padding-top: 10px; }
+.page-cases .early > summary {
+  list-style: none; display: inline-flex; align-items: center; gap: 8px; padding: 8px 0; cursor: pointer; user-select: none;
+  font-weight: 800; color: var(--muted);
+}
+.page-cases .early > summary::-webkit-details-marker { display: none; }
+.page-cases .early > summary:hover { color: var(--text); }
+.page-cases .early > summary .i { width: 18px; height: 18px; transition: transform 0.2s; }
+.page-cases .early[open] > summary .i { transform: rotate(90deg); }
+.page-cases .early-n {
+  min-width: 22px; height: 22px; padding: 0 7px; border-radius: 11px; background: var(--surface-2); border: 1px solid var(--line);
+  font-size: 12px; line-height: 20px; text-align: center; color: var(--muted);
+}
+.page-cases .early .lvl-sec { margin-top: 18px; }
+.page-cases .early .lvl-head h2 { font-size: 16px; color: var(--muted); }
+
+/* ---------- страница кейса ---------- */
+.page-case .back-link {
+  display: inline-flex; align-items: center; gap: 2px; margin: -4px 0 12px -4px; padding: 4px 8px 4px 2px; border-radius: 8px;
+  color: var(--muted); font-weight: 800; font-size: 14px;
+}
+.page-case .back-link:hover { color: var(--text); }
+.page-case .back-link .i { width: 18px; height: 18px; }
+
+.page-case .co-head { display: flex; align-items: center; gap: 24px; margin-bottom: 20px; }
+.page-case .co-art { position: relative; width: 180px; height: 150px; flex: none; display: grid; place-items: center; }
+.page-case .co-art::before {
+  content: ''; position: absolute; inset: -8% -4%; border-radius: 50%;
+  background: radial-gradient(closest-side, rgba(var(--cc-rgb), 0.3), rgba(var(--cc-rgb), 0));
+}
+.page-case .co-art img { position: relative; width: 100%; height: 100%; object-fit: contain; filter: drop-shadow(0 14px 18px rgba(0, 0, 0, 0.45)); }
+.page-case .co-info { display: flex; flex-direction: column; gap: 6px; min-width: 0; }
+.page-case .co-info h1 { font-size: 28px; }
+.page-case .co-price { font-size: 18px; font-weight: 800; }
+.page-case .co-price > span { color: var(--muted); font-size: 15px; }
+.page-case .co-meta { color: var(--muted); font-size: 14px; }
+
+/* сцена открытия */
+.page-case .co-stage { position: relative; padding: 14px 0; overflow: hidden; }
+.page-case .co-stage .empty { padding: 36px 16px; }
+.page-case .co-stage.idle .reel-cell { opacity: 0.35; }
+.page-case .co-stage.idle .reel-marker { opacity: 0.6; }
+.page-case .co-overlay { position: absolute; inset: 0; z-index: 3; display: grid; place-items: center; pointer-events: none; }
+.page-case .co-overlay span {
+  padding: 8px 16px; border-radius: 20px; background: rgba(14, 14, 19, 0.88); border: 1px solid var(--line-2);
+  font-weight: 800; font-size: 14px;
+}
+
+/* несколько кейсов: плитки рубашкой вверх */
+.page-case .co-grid { display: grid; gap: 10px; width: 100%; max-width: 680px; margin: 0 auto; padding: 0 14px; }
+.page-case .co-grid.n3 { grid-template-columns: repeat(3, minmax(0, 1fr)); max-width: 440px; }
+.page-case .co-grid.n5, .page-case .co-grid.n10 { grid-template-columns: repeat(5, minmax(0, 1fr)); }
+.page-case .flip { perspective: 900px; min-width: 0; }
+.page-case .flip-in { position: relative; transform-style: preserve-3d; transition: transform 0.45s cubic-bezier(0.2, 0.8, 0.3, 1); }
+.page-case .flip.flipped .flip-in { transform: rotateY(180deg); }
+.page-case .co-grid.instant .flip-in { transition: none; }
+.page-case .flip-front { transform: rotateY(180deg); backface-visibility: hidden; -webkit-backface-visibility: hidden; }
+.page-case .flip-front .ccard { cursor: default; }
+.page-case .flip-front .ccard:hover { transform: none; }
+.page-case .co-ph { visibility: hidden; }
+.page-case .flip-back {
+  position: absolute; inset: 0; display: grid; place-items: center; border-radius: 12px;
+  background: var(--surface-2); border: 1px solid var(--line-2); backface-visibility: hidden; -webkit-backface-visibility: hidden;
+}
+.page-case .flip-back img { width: 58%; opacity: 0.35; filter: grayscale(0.4); }
+
+/* кнопки */
+.page-case .co-controls { display: flex; align-items: center; justify-content: center; gap: 12px; flex-wrap: wrap; margin-top: 14px; }
+.page-case .co-seg { display: inline-flex; gap: 2px; padding: 4px; border-radius: 12px; background: var(--surface); border: 1px solid var(--line); }
+.page-case .co-seg button {
+  height: 46px; min-width: 52px; padding: 0 12px; border: 0; border-radius: 9px; background: none;
+  color: var(--muted); font-weight: 800; font-size: 15px; transition: background 0.15s, color 0.15s;
+}
+.page-case .co-seg button:hover:not(:disabled) { color: var(--text); }
+.page-case .co-seg button.active { background: var(--surface-3); color: var(--text); }
+.page-case .co-seg button:disabled { cursor: not-allowed; opacity: 0.5; }
+.page-case .co-open, .page-case .co-skip { min-width: 300px; }
+.page-case .co-open .i { width: 18px; height: 18px; }
+
+/* что внутри */
+.page-case .co-contents .section-head h2 { font-size: 18px; }
+.page-case .cb-have { width: 22px; height: 22px; padding: 0; justify-content: center; color: var(--good); }
+.page-case .cb-have .i { width: 13px; height: 13px; stroke-width: 2.6; }
+
+/* ---------- адаптив ---------- */
+@media (max-width: 1100px) {
+  .page-cases .cs-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+}
+@media (max-width: 640px) {
+  .page-cases .cs-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
+  .page-cases .cs-card { padding: 10px 12px 12px; }
+  .page-cases .cs-name { font-size: 14px; }
+  .page-cases .gift-card { gap: 12px; padding-right: 12px; }
+  .page-cases .gift-art { width: 54px; height: 48px; }
+  .page-cases .gift-name { font-size: 15px; }
+  .page-cases .gift-act .btn { min-width: 0; }
+  .page-cases .lvl-sec { margin-top: 26px; }
+}
+@media (max-width: 600px) {
+  .page-case .co-head { flex-direction: column; text-align: center; gap: 10px; margin-bottom: 16px; }
+  .page-case .co-art { width: 150px; height: 120px; }
+  .page-case .co-info { align-items: center; }
+  .page-case .co-info h1 { font-size: 24px; }
+  .page-case .co-stage { padding: 10px 0; }
+  .page-case .co-grid { gap: 6px; padding: 0 10px; }
+  .page-case .co-grid.n5 .ccard-info, .page-case .co-grid.n10 .ccard-info { display: none; }
+  .page-case .co-grid.n5 .cbadges, .page-case .co-grid.n10 .cbadges { display: none; }
+  .page-case .co-controls { flex-direction: column; align-items: stretch; gap: 10px; }
+  .page-case .co-seg button { flex: 1; min-width: 0; height: 40px; }
+  .page-case .co-open, .page-case .co-skip { min-width: 0; width: 100%; }
+}

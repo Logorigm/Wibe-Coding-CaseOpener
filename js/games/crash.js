@@ -1,4 +1,5 @@
-/* Мини-игра «Краш»: ракета летит, множитель растёт — забери выигрыш до взрыва */
+/* Мини-игра «Краш»: множитель растёт — забери ставку, пока не случился обвал.
+ * Параметры — data/config.js → games.crash */
 (function () {
   'use strict';
   const App = window.App;
@@ -6,42 +7,50 @@
   const ui = App.ui;
   const CFG = GAME_DATA.config;
 
-  const history = [];
+  const history = []; // последние точки обвала (новые — в начале)
 
   App.games.register({
     id: 'crash',
     name: 'Краш',
-    icon: '🚀',
-    color: '#f43f5e',
-    short: 'Забери выигрыш до взрыва',
-    desc: 'Множитель растёт, пока ракета летит. Успей забрать ставку до того, как она взорвётся!',
-    rules: `<p>Сделай ставку и запусти ракету. Множитель начинает расти с <b>×1.00</b>.</p>
-      <p>Нажми <b>«Забрать»</b> в любой момент — выигрыш = ставка × текущий множитель.</p>
-      <p>Если ракета взорвётся раньше — ставка сгорает. Взрыв может случиться в любой момент, даже сразу.</p>
-      <p>Можно задать <b>автовывод</b> — игра заберёт выигрыш сама на нужном множителе.</p>
-      <p class="muted">Пробел — запуск / забрать.</p>`,
+    icon: 'trend',
+    short: 'Забери ставку до обвала',
+    get rules() {
+      return `<p>Сделай ставку и нажми «Запустить». Множитель растёт с ×1.00.</p>
+        <p>Нажми «Забрать» в любой момент — получишь ставку × текущий множитель.</p>
+        <p>Если график обвалится раньше — ставка сгорает. Обвал может случиться когда угодно, даже сразу.</p>
+        <p>Автовывод заберёт выигрыш сам на нужном множителе.</p>`;
+    },
     render(ctx, host) {
       const C = CFG.games.crash;
       host.innerHTML = `
         <div class="game-layout">
           <div class="game-panel panel">
             <div data-bet></div>
-            <label class="field"><span>Автовывод (необязательно)</span><span class="bet-input"><b class="x-prefix">×</b><input type="number" min="1.01" step="0.01" placeholder="выкл" data-auto value="${App.state.lastBets.crashAuto || ''}"></span></label>
-            <button class="btn btn-primary btn-xl btn-block" data-go>🚀 Запустить</button>
-            <div class="game-info" data-info></div>
+            <button class="btn btn-primary btn-xl btn-block" data-go>Запустить</button>
+            <label class="field crash-auto">
+              <span>Автовывод</span>
+              <span class="bet-input"><b class="crash-x">×</b><input type="number" inputmode="decimal" min="1.01" step="0.01" placeholder="выключен" data-auto value="${App.state.lastBets.crashAuto || ''}"></span>
+            </label>
+            <div class="game-note" data-info></div>
           </div>
-          <div class="game-stage panel crash-stage" data-stage>
-            <canvas data-canvas></canvas>
-            <div class="crash-mult" data-mult>×1.00</div>
-            <div class="crash-msg" data-msg>Сделай ставку и запускай ракету!</div>
+          <div class="game-main">
+            <div class="game-stage panel crash-stage" data-stage>
+              <canvas data-canvas></canvas>
+              <div class="crash-mult" data-mult>×1.00</div>
+            </div>
+            <div class="game-result" data-result>Сделай ставку и запускай</div>
+            <div class="crash-hist" data-hist></div>
           </div>
-        </div>
-        <div class="hist-chips" data-hist></div>`;
+        </div>`;
       const $ = (s) => host.querySelector(s);
       const bet = App.widgets.betInput($('[data-bet]'), { key: 'crash' });
       const canvas = $('[data-canvas]');
       const c2 = canvas.getContext('2d');
+      const stage = $('[data-stage]');
       const goBtn = $('[data-go]');
+      const autoInp = $('[data-auto]');
+
+      // idle — ждём ставку; running — растёт; after — ставка уже забрана, график ещё летит; done — раунд окончен
       let state = 'idle';
       let stake = 0;
       let crashAt = 1;
@@ -51,7 +60,14 @@
       let m = 1;
       let W = 0;
       let H = 0;
+      let busy = false;
+      let lockUntil = 0;
 
+      const hold = (on) => {
+        if (busy === on) return;
+        busy = on;
+        App.setBusy(on);
+      };
       const multAt = (ms) => Math.exp((C.speed * ms) / 1000);
       const timeFor = (mult) => (Math.log(mult) / C.speed) * 1000;
       function crashPoint() {
@@ -59,140 +75,168 @@
         const v = Math.floor((100 * (1 - C.houseEdge)) / (1 - r)) / 100;
         return U.clamp(v, 1, C.maxMultiplier);
       }
+      const autoValue = () => {
+        const v = Number(autoInp.value);
+        return v >= 1.01 ? v : 0;
+      };
+      const colors = () => {
+        const css = getComputedStyle(document.documentElement);
+        const v = (n, d) => css.getPropertyValue(n).trim() || d;
+        return { accent: v('--accent', '#ff5fa2'), good: v('--good', '#3ccf91'), bad: v('--bad', '#ff5f6d'), muted: v('--dim', '#6c6c7c') };
+      };
 
+      /* ---------- график ---------- */
       function resize() {
+        if (!ctx.alive) return;
         const r = canvas.getBoundingClientRect();
         const dpr = Math.min(2, window.devicePixelRatio || 1);
         W = r.width;
         H = r.height;
-        canvas.width = W * dpr;
-        canvas.height = H * dpr;
+        canvas.width = Math.round(W * dpr);
+        canvas.height = Math.round(H * dpr);
         c2.setTransform(dpr, 0, 0, dpr, 0, 0);
-        draw(state === 'idle' ? 0 : performance.now() - t0);
+        draw(state === 'idle' ? 0 : elapsed());
       }
+      let frozenT = 0;
+      const elapsed = () => (state === 'done' ? frozenT : performance.now() - t0);
 
       function draw(t) {
-        const css = getComputedStyle(document.documentElement);
-        const accent = css.getPropertyValue('--accent').trim() || '#ff4fa3';
+        if (!W || !H) return;
+        const col = colors();
         c2.clearRect(0, 0, W, H);
-        const pad = { l: 46, r: 20, t: 20, b: 28 };
+        const pad = { l: 44, r: 18, t: 18, b: 26 };
         const tMax = Math.max(8000, t * 1.15);
         const mNow = state === 'idle' ? 1 : multAt(t);
-        const mMax = Math.max(2, mNow * 1.25);
+        const mMax = Math.max(2, mNow * 1.2);
         const X = (ms) => pad.l + (ms / tMax) * (W - pad.l - pad.r);
         const Y = (mult) => H - pad.b - ((mult - 1) / (mMax - 1)) * (H - pad.t - pad.b);
         // сетка
-        c2.font = '600 11px Nunito, sans-serif';
-        c2.fillStyle = 'rgba(255,255,255,.45)';
-        c2.strokeStyle = 'rgba(255,255,255,.07)';
+        c2.font = '700 11px Nunito, system-ui, sans-serif';
+        c2.fillStyle = 'rgba(255,255,255,.35)';
+        c2.strokeStyle = 'rgba(255,255,255,.06)';
         c2.lineWidth = 1;
         const stepM = mMax <= 3 ? 0.5 : mMax <= 6 ? 1 : mMax <= 15 ? 2 : Math.pow(10, Math.floor(Math.log10(mMax))) / 2;
-        for (let v = 1; v <= mMax; v += stepM) {
-          const y = Y(v);
+        for (let v = 1; v <= mMax + 1e-9; v += stepM) {
+          const y = Math.round(Y(v)) + 0.5;
           c2.beginPath();
           c2.moveTo(pad.l, y);
           c2.lineTo(W - pad.r, y);
           c2.stroke();
-          c2.fillText('×' + (v % 1 ? v.toFixed(1) : v), 6, y + 4);
+          c2.fillText('×' + (v % 1 ? v.toFixed(1) : v), 8, y + 4);
         }
         const stepT = tMax <= 12000 ? 2000 : tMax <= 30000 ? 5000 : 10000;
         for (let s = stepT; s < tMax; s += stepT) c2.fillText(s / 1000 + 'с', X(s) - 8, H - 8);
         if (state === 'idle') return;
-        // кривая
-        const crashed = state === 'crashed';
-        const color = crashed ? '#f43f5e' : cashed ? '#34d399' : accent;
+
+        const crashed = state === 'done' && !cashed;
+        const color = crashed ? col.bad : cashed ? col.good : col.accent;
+        const N = 90;
         const pts = [];
-        const N = 80;
         for (let i = 0; i <= N; i++) {
           const ms = (t * i) / N;
           pts.push([X(ms), Y(multAt(ms))]);
         }
-        const grad = c2.createLinearGradient(0, pad.t, 0, H - pad.b);
-        grad.addColorStop(0, U.rgba(color.startsWith('#') ? color : '#ff4fa3', 0.35));
-        grad.addColorStop(1, U.rgba(color.startsWith('#') ? color : '#ff4fa3', 0));
+        // мягкая заливка под линией
         c2.beginPath();
         c2.moveTo(pts[0][0], H - pad.b);
         pts.forEach((p) => c2.lineTo(p[0], p[1]));
-        c2.lineTo(pts[pts.length - 1][0], H - pad.b);
+        c2.lineTo(pts[N][0], H - pad.b);
         c2.closePath();
-        c2.fillStyle = grad;
+        c2.fillStyle = color.startsWith('#') ? U.rgba(color, 0.08) : 'rgba(255,255,255,.05)';
         c2.fill();
+        // линия
         c2.beginPath();
         pts.forEach((p, i) => (i ? c2.lineTo(p[0], p[1]) : c2.moveTo(p[0], p[1])));
         c2.strokeStyle = color;
-        c2.lineWidth = 4;
+        c2.lineWidth = 3;
         c2.lineCap = 'round';
+        c2.lineJoin = 'round';
         c2.stroke();
-        // точка вывода
+        // точка, где забрал
         if (cashed) {
           const tc = timeFor(cashed);
           if (tc <= t) {
-            c2.fillStyle = '#34d399';
+            c2.fillStyle = col.good;
             c2.beginPath();
-            c2.arc(X(tc), Y(cashed), 6, 0, Math.PI * 2);
+            c2.arc(X(tc), Y(cashed), 5, 0, Math.PI * 2);
             c2.fill();
           }
         }
-        // ракета
-        const tip = pts[pts.length - 1];
-        const prev = pts[pts.length - 4] || pts[0];
-        const ang = Math.atan2(tip[1] - prev[1], tip[0] - prev[0]);
-        c2.save();
-        c2.translate(tip[0], tip[1]);
-        c2.font = '30px "Noto Color Emoji", "Apple Color Emoji", "Segoe UI Emoji", sans-serif';
-        c2.textAlign = 'center';
-        c2.textBaseline = 'middle';
-        if (crashed) c2.fillText('💥', 0, 0);
-        else {
-          c2.rotate(ang + Math.PI / 4);
-          c2.fillText('🚀', 0, 0);
+        // кончик графика
+        const tip = pts[N];
+        c2.fillStyle = color;
+        c2.beginPath();
+        c2.arc(tip[0], tip[1], crashed ? 5 : 6, 0, Math.PI * 2);
+        c2.fill();
+        if (crashed) {
+          c2.strokeStyle = color;
+          c2.lineWidth = 2;
+          c2.beginPath();
+          c2.moveTo(tip[0] - 7, tip[1] - 7);
+          c2.lineTo(tip[0] + 7, tip[1] + 7);
+          c2.moveTo(tip[0] + 7, tip[1] - 7);
+          c2.lineTo(tip[0] - 7, tip[1] + 7);
+          c2.stroke();
         }
-        c2.restore();
       }
 
-      function setMsg(html, cls) {
-        const el = $('[data-msg]');
+      /* ---------- интерфейс ---------- */
+      function setResult(html, cls) {
+        const el = $('[data-result]');
         el.innerHTML = html;
-        el.className = 'crash-msg ' + (cls || '');
+        el.className = 'game-result' + (cls ? ' ' + cls : '');
+      }
+      function setMult(v, cls) {
+        const el = $('[data-mult]');
+        el.textContent = '×' + v.toFixed(2);
+        el.className = 'crash-mult' + (cls ? ' ' + cls : '');
       }
       function info() {
         const el = $('[data-info]');
-        if (state === 'running' && !cashed) el.innerHTML = `Возможный выигрыш: <b>${ui.cur(Math.floor(stake * m))}</b>`;
-        else if (cashed) el.innerHTML = `Выведено на ×${cashed.toFixed(2)}: <b class="good">${ui.cur(Math.floor(stake * cashed))}</b>`;
-        else el.innerHTML = '';
+        if (state === 'running') el.innerHTML = `Ставка ${ui.cur(stake)}${autoValue() ? ` · автовывод ×${autoValue().toFixed(2)}` : ''}`;
+        else el.innerHTML = 'Множитель растёт, пока не обвалится';
       }
       function updateBtn() {
-        if (state === 'idle') {
-          goBtn.disabled = false;
-          goBtn.className = 'btn btn-primary btn-xl btn-block';
-          goBtn.innerHTML = '🚀 Запустить';
-        } else if (state === 'running' && !cashed) {
+        if (state === 'running') {
           goBtn.disabled = false;
           goBtn.className = 'btn btn-gold btn-xl btn-block';
           goBtn.innerHTML = `Забрать ${ui.cur(Math.floor(stake * m))}`;
         } else {
-          goBtn.disabled = true;
-          goBtn.className = 'btn btn-ghost btn-xl btn-block';
-          goBtn.innerHTML = cashed && state === 'running' ? '✓ Выведено, ждём…' : 'Ждём…';
+          goBtn.disabled = false;
+          goBtn.className = 'btn btn-primary btn-xl btn-block';
+          goBtn.textContent = 'Запустить';
         }
+        bet.disable(state === 'running');
+        autoInp.disabled = state === 'running';
+      }
+      function renderHist() {
+        $('[data-hist]').innerHTML = history
+          .slice(0, 14)
+          .map((v) => `<span class="crash-chip${v < 2 ? ' low' : v >= 10 ? ' high' : ''}">×${v.toFixed(2)}</span>`)
+          .join('');
       }
 
+      /* ---------- раунд ---------- */
       function start() {
-        const b = bet.take();
+        if (Date.now() < lockUntil) return;
+        if (state === 'after') endRound();
+        const b = App.games.charge(bet);
         if (b == null) return;
-        const autoVal = Number($('[data-auto]').value);
-        App.state.lastBets.crashAuto = autoVal > 1 ? autoVal : '';
-        if (!App.eco.spend(b, 'coins')) return;
+        const auto = autoValue();
+        App.state.lastBets.crashAuto = auto || '';
         stake = b;
         cashed = 0;
         crashAt = crashPoint();
         state = 'running';
-        bet.disable(true);
         t0 = performance.now();
         m = 1;
-        $('[data-stage]').classList.remove('crashed', 'cashed');
-        setMsg('');
+        hold(true);
+        setMult(1);
+        setResult('Растёт…', 'muted');
         App.sfx.play('whoosh');
+        info();
+        updateBtn();
+        cancelAnimationFrame(raf);
         loop();
       }
 
@@ -200,95 +244,116 @@
         if (!ctx.alive) return;
         const t = performance.now() - t0;
         m = multAt(t);
-        const auto = Number($('[data-auto]').value);
+        const auto = autoValue();
         if (m >= crashAt) {
           m = crashAt;
-          if (!cashed && auto > 1 && auto <= crashAt) cashout(auto);
-          return crash(timeFor(crashAt));
+          if (state === 'running' && auto && auto <= crashAt) cashout(auto);
+          return crash();
         }
-        if (!cashed && auto > 1 && m >= auto) cashout(auto);
-        $('[data-mult]').textContent = '×' + m.toFixed(2);
+        if (state === 'running' && auto && m >= auto) cashout(auto);
+        setMult(m, cashed ? 'good' : '');
         draw(t);
-        info();
-        updateBtn();
+        if (state === 'running') updateBtn();
         raf = requestAnimationFrame(loop);
       }
 
       function cashout(at) {
-        if (state !== 'running' || cashed) return;
+        if (state !== 'running') return;
         cashed = Math.min(at || m, crashAt);
         const payout = Math.floor(stake * cashed);
-        App.eco.add(payout, 'coins');
-        App.games.record('crash', stake, payout);
+        App.eco.add(payout);
         App.stats.max('crashBest', Math.floor(cashed * 100) / 100);
+        App.games.record('crash', stake, payout);
+        state = 'after';
+        hold(false);
         App.sfx.play('cashout');
-        $('[data-stage]').classList.add('cashed');
-        App.fx.burstAt(goBtn, ['#34d399', '#fde68a', '#fff'], 30);
-        ui.toast(`Забрал ×${cashed.toFixed(2)} → ${ui.cur(payout)}`, 'good', { icon: '🚀' });
+        setResult(`Забрал на ×${cashed.toFixed(2)}: <b class="good">${ui.cur(payout, { sign: true })}</b>`);
+        lockUntil = Date.now() + 400;
         info();
         updateBtn();
       }
 
-      function crash(t) {
+      // раунд окончен: график обвалился
+      function crash() {
         cancelAnimationFrame(raf);
-        state = 'crashed';
-        $('[data-mult]').textContent = '×' + crashAt.toFixed(2);
-        draw(t);
-        const stage = $('[data-stage]');
-        stage.classList.add('crashed');
-        App.sfx.play('explode');
-        App.fx.shake(stage);
-        if (!cashed) {
+        const wasRunning = state === 'running';
+        state = 'done';
+        frozenT = timeFor(crashAt);
+        setMult(crashAt, cashed ? 'good' : 'bad');
+        draw(frozenT);
+        if (wasRunning) {
           App.games.record('crash', stake, 0);
-          setMsg(`💥 Взрыв на ×${crashAt.toFixed(2)}`, 'bad');
-        } else setMsg(`💥 Взрыв на ×${crashAt.toFixed(2)} — а ты успел забрать ×${cashed.toFixed(2)}! 😎`, 'good');
+          hold(false);
+          App.sfx.play('lose');
+          App.fx.shake(stage);
+          setResult(`Обвал на ×${crashAt.toFixed(2)} — ставка сгорела`, 'bad');
+          lockUntil = Date.now() + 600;
+        } else {
+          App.sfx.play('tickLow');
+          setResult(`Забрал на ×${cashed.toFixed(2)}: <b class="good">${ui.cur(Math.floor(stake * cashed), { sign: true })}</b> · обвал на ×${crashAt.toFixed(2)}`);
+        }
         history.unshift(crashAt);
-        if (history.length > 24) history.pop();
+        if (history.length > 30) history.pop();
         renderHist();
         info();
         updateBtn();
-        ctx.after(1400, () => {
-          state = 'idle';
-          bet.disable(false);
-          updateBtn();
-        });
       }
 
-      function renderHist() {
-        $('[data-hist]').innerHTML = history.length
-          ? '<span class="muted small">Последние:</span>' + history.map((v) => `<span class="hchip ${v < 2 ? 'h-low' : v < 10 ? 'h-mid' : 'h-high'}">×${v.toFixed(2)}</span>`).join('')
-          : '';
+      // ставка уже забрана, а игрок запускает новый раунд — дорисовываем старый мгновенно
+      function endRound() {
+        cancelAnimationFrame(raf);
+        history.unshift(crashAt);
+        if (history.length > 30) history.pop();
+        frozenT = performance.now() - t0;
+        state = 'done';
+        renderHist();
       }
 
       goBtn.addEventListener('click', () => {
-        if (state === 'idle') start();
-        else if (state === 'running' && !cashed) cashout();
+        if (state === 'running') cashout();
+        else start();
+      });
+      autoInp.addEventListener('change', () => {
+        const v = autoValue();
+        autoInp.value = v ? v.toFixed(2) : '';
+        App.state.lastBets.crashAuto = v || '';
+        App.store.dirty();
       });
       ctx.listen(document, 'keydown', (e) => {
-        if (e.code !== 'Space' || e.target.closest('input, select, textarea') || ui.topModal()) return;
+        if (e.code !== 'Space' || e.repeat || e.target.closest('input, select, textarea, button') || ui.topModal()) return;
         e.preventDefault();
         goBtn.click();
       });
       ctx.listen(window, 'resize', U.debounce(resize, 100));
       ctx.onDestroy(() => {
         cancelAnimationFrame(raf);
-        // ушёл со страницы во время полёта — автоматически забираем
-        if (state === 'running' && !cashed) {
-          const t = performance.now() - t0;
-          const cur = multAt(t);
+        // ушёл со страницы во время роста — забираем по текущему множителю
+        if (state === 'running') {
+          const cur = multAt(performance.now() - t0);
           if (cur < crashAt) {
-            const payout = Math.floor(stake * cur);
-            App.eco.add(payout, 'coins');
+            const auto = autoValue();
+            const at = auto && auto <= cur ? auto : cur;
+            const payout = Math.floor(stake * at);
+            App.eco.add(payout);
+            App.stats.max('crashBest', Math.floor(at * 100) / 100);
             App.games.record('crash', stake, payout);
-            ui.toast(`🚀 Краш: авто-вывод на ×${cur.toFixed(2)} → ${ui.cur(payout)}`, 'good');
+            ui.toast(`Краш: забрал на ×${at.toFixed(2)} — ${ui.cur(payout)}`, 'good');
           } else {
             App.games.record('crash', stake, 0);
-            ui.toast(`🚀 Ракета взорвалась на ×${crashAt.toFixed(2)}`, 'bad');
+            ui.toast(`Краш: обвал на ×${crashAt.toFixed(2)}`, 'bad');
           }
+          history.unshift(crashAt);
+          state = 'done';
+        } else if (state === 'after') {
+          history.unshift(crashAt);
         }
+        if (history.length > 30) history.length = 30;
+        hold(false);
       });
+
       requestAnimationFrame(resize);
       renderHist();
+      info();
       updateBtn();
     },
   });

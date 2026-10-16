@@ -1,4 +1,4 @@
-/* Страницы «Кейсы» и «Открытие кейса» */
+/* Главная «Кейсы» (кейсы по уровням) и страница открытия кейса */
 (function () {
   'use strict';
   const App = window.App;
@@ -6,441 +6,551 @@
   const ui = App.ui;
   const esc = U.esc;
 
-  App.views = App.views || {};
-
-  App.views.casePrice = (cs) => {
-    if (cs.price > 0) return ui.cur(cs.price, cs.currency);
-    const cd = App.cases.cooldownLeft(cs);
-    if (cd > 0) return `<span class="case-timer" data-cd="${esc(cs.id)}">⏳ ${U.clock(cd)}</span>`;
-    return '<span class="free-tag">Бесплатно</span>';
+  const LS_EARLY = 'waifudrop:earlyCasesOpen';
+  const LS_COUNT = 'waifudrop:openCount';
+  const lsGet = (k) => {
+    try { return localStorage.getItem(k); } catch (e) { return null; }
+  };
+  const lsSet = (k, v) => {
+    try { localStorage.setItem(k, v); } catch (e) { /* хранилище недоступно — не страшно */ }
   };
 
-  // Кейс «лестницы» (за монеты, открывается по уровню)
-  const ladderIds = () => new Set(App.data.ladder().map((c) => c.id));
-  App.views.isLadder = (cs) => ladderIds().has(cs.id);
-  // Окупаемость кейса в процентах (или null для бесплатных)
-  App.views.rtp = (cs) => {
-    const r = App.data.caseRTP(cs);
-    return r == null || !cs.pool.length ? null : Math.round(r * 100);
-  };
-  const RTP_TIP = 'Отдача — сколько в среднем возвращается от цены кейса ценой выпавших персонажей';
-
-  // o: { best: id лучшего доступного кейса }
-  App.views.caseCard = (cs, o) => {
-    o = o || {};
-    const locked = App.cases.isLocked(cs);
-    const tickets = App.cases.tickets(cs);
-    const prog = App.collection.caseProgress(cs);
-    const ladder = App.views.isLadder(cs);
-    const rtp = App.views.rtp(cs);
-    const best = !locked && o.best === cs.id;
-    const done = prog.done;
-    return `<a class="case-card${locked ? ' locked' : ''}${best ? ' best' : ''}" href="#/case/${esc(cs.id)}" style="--cc:${esc(cs.color)}">
-      <span class="case-glow"></span>
-      ${cs.badge ? `<span class="case-badge">${esc(cs.badge)}</span>` : ladder ? `<span class="case-lvl">Ур. ${cs.requiredLevel}</span>` : ''}
-      ${tickets ? `<span class="case-tickets" title="Билеты на бесплатное открытие">🎟️ ${tickets}</span>` : ''}
-      <div class="case-art">${ui.caseImg(cs)}</div>
-      <div class="case-name">${esc(cs.name)}</div>
-      ${best ? '<div class="case-best">★ Лучший для тебя</div>' : ''}
-      <div class="case-meta">
-        ${rtp != null ? `<span class="case-rtp" title="${RTP_TIP}">📈 ${rtp}%</span>` : ''}
-        <span class="${done ? 'good' : ''}" title="Сколько персонажей кейса уже в коллекции">${done ? '✓' : '📖'} ${prog.have}/${prog.total}</span>
-      </div>
-      <div class="case-price">${App.views.casePrice(cs)}</div>
-      ${locked ? `<div class="case-lock"><span>🔒</span>Уровень ${cs.requiredLevel}</div>` : ''}
-    </a>`;
+  // цвет кейса для мягкой подсветки картинки
+  const ccStyle = (cs) => {
+    const color = cs.color || '#ff5fa2';
+    return `--cc:${esc(color)};--cc-rgb:${U.hexToRgb(color).join(',')}`;
   };
 
-  // Обновление таймеров бесплатных кейсов на странице
-  App.views.tickCaseTimers = (root) => {
-    root.querySelectorAll('[data-cd]').forEach((el) => {
-      const cs = App.data.getCase(el.dataset.cd);
-      if (!cs) return;
-      const left = App.cases.cooldownLeft(cs);
-      if (left > 0) el.textContent = '⏳ ' + U.clock(left);
-      else el.outerHTML = '<span class="free-tag">Бесплатно</span>';
-    });
-  };
-
-  // Лучший доступный кейс и следующий закрытый — для «лестницы»
-  App.views.ladderInfo = () => {
-    const ladder = App.data.ladder();
-    const open = ladder.filter((cs) => !App.cases.isLocked(cs));
-    const best = open.reduce((b, cs) => (!b || cs.price > b.price ? cs : b), null);
-    const next = ladder.find((cs) => App.cases.isLocked(cs)) || null;
-    return { ladder, open, best, next };
-  };
-
-  // Панель «твой лучший кейс → следующий кейс»
-  App.views.ladderPanel = () => {
-    const { best, next } = App.views.ladderInfo();
-    if (!best && !next) return '';
-    const st = App.state;
-    const item = (cs, label, extra) => `<a class="lp-item${App.cases.isLocked(cs) ? ' locked' : ''}" href="#/case/${esc(cs.id)}" style="--cc:${esc(cs.color)}">
-        ${ui.caseImg(cs, 'lp-art')}
-        <div class="lp-body">
-          <small>${label}</small>
-          <b>${esc(cs.name)}</b>
-          <span class="lp-sub">${ui.cur(cs.price, cs.currency)}${App.views.rtp(cs) != null ? ` · <span title="${RTP_TIP}">отдача <b>${App.views.rtp(cs)}%</b></span>` : ''}</span>
-          ${extra || ''}
-        </div>
-      </a>`;
-    let nextHtml = '';
-    if (next) {
-      const lvls = next.requiredLevel - st.level;
-      const need = App.eco.xpNeeded(st.level);
-      const bar = lvls === 1 ? `${ui.bar(Math.min(1, st.xp / need))}<span class="lp-xp">${U.fmt(st.xp)} / ${U.fmt(need)} XP</span>` : `<span class="lp-xp">ещё ${lvls} ${U.plural(lvls, ['уровень', 'уровня', 'уровней'])}</span>`;
-      nextHtml = `<div class="lp-arrow">➜</div>${item(next, `🔒 Откроется на ${next.requiredLevel} уровне`, bar)}`;
+  // «Бесплатно раз в час» / «раз в 2 часа» / «раз в 30 мин»
+  function freeLabel(cs) {
+    const m = Number(cs.cooldown) || 0;
+    if (!m) return 'Бесплатно';
+    if (m === 60) return 'Бесплатно раз в час';
+    if (m === 1440) return 'Бесплатно раз в сутки';
+    if (m % 60 === 0) {
+      const h = m / 60;
+      return `Бесплатно раз в ${h} ${U.plural(h, ['час', 'часа', 'часов'])}`;
     }
-    return `<div class="ladder-panel panel">
-      ${best ? item(best, '⭐ Твой лучший кейс', '<span class="btn btn-primary btn-sm lp-btn">Открыть</span>') : ''}
-      ${nextHtml}
-      <div class="lp-hint muted small">Каждый новый уровень открывает кейс дороже и выгоднее. Опыт дают открытия кейсов (чем дороже кейс — тем больше) и ставки в мини-играх.</div>
-    </div>`;
-  };
+    return `Бесплатно раз в ${m} мин`;
+  }
 
-  /* ======================= Список кейсов ======================= */
+  const RISK = { low: 'низкий разброс', mid: 'средний разброс', high: 'высокий разброс', elite: 'элитный' };
+
+  /* ======================= Главная: список кейсов ======================= */
+
+  function caseCard(cs, locked) {
+    return `<a class="cs-card${locked ? ' locked' : ''}" href="#/case/${esc(cs.id)}" style="${ccStyle(cs)}">
+      <div class="cs-art">${ui.caseImg(cs)}${locked ? `<span class="cs-lock">${ui.svg('lock')}</span>` : ''}</div>
+      <div class="cs-name">${esc(cs.name)}</div>
+      <div class="cs-price">${ui.cur(cs.price)}</div>
+    </a>`;
+  }
+
+  function giftAction(cs) {
+    const left = App.cases.cooldownLeft(cs);
+    return left > 0
+      ? `<span class="gift-timer">${ui.svg('clock')}<span>Через ${U.clock(left)}</span></span>`
+      : '<span class="btn btn-primary btn-sm">Открыть</span>';
+  }
+
+  function giftCard(cs, highlight) {
+    return `<a class="gift-card${highlight ? ' onboard' : ''}" href="#/case/${esc(cs.id)}" style="${ccStyle(cs)}" data-gift="${esc(cs.id)}">
+      <div class="gift-art">${ui.caseImg(cs)}</div>
+      <div class="gift-body">
+        <div class="gift-name">${esc(cs.name)}</div>
+        <div class="gift-sub">${freeLabel(cs)}</div>
+      </div>
+      <div class="gift-act" data-gift-act>${giftAction(cs)}</div>
+    </a>`;
+  }
+
   App.router.register('cases', {
     title: 'Кейсы',
+    nav: 'cases',
+    feature: 'cases',
     render(ctx) {
-      let hideLocked = false;
-      try { hideLocked = localStorage.getItem('waifudrop:hideLocked') === '1'; } catch (e) { /* ignore */ }
       ctx.el.innerHTML = `
         <div class="page-head">
-          <div><h1>Кейсы</h1><p class="muted">С каждым уровнем открывается новый кейс — дороже и с большей <b>отдачей</b>. Старые кейсы тоже пригодятся: у каждого свои персонажи для коллекции.</p></div>
+          <div><h1>Кейсы</h1><p>С каждым уровнем открываются новые кейсы</p></div>
         </div>
-        <div data-ladder-panel></div>
-        <section class="section" data-specials-sec>
-          <div class="section-head"><h2>✨ Особые кейсы</h2></div>
-          <div class="grid-cases" data-specials></div>
-        </section>
-        <section class="section">
-          <div class="section-head"><h2>🪜 Кейсы по уровням</h2>
-            <label class="switch-row small"><input type="checkbox" data-hide-locked ${hideLocked ? 'checked' : ''}><span class="switch"></span>Скрыть закрытые</label>
-          </div>
-          <div class="grid-cases" data-ladder></div>
+        <div data-bank></div>
+        <div data-gift></div>
+        <div data-levels></div>`;
+      const $ = (s) => ctx.el.querySelector(s);
+      const bankHost = $('[data-bank]');
+      const giftHost = $('[data-gift]');
+      const levelsHost = $('[data-levels]');
+
+      /* ---------- помощь, если монеты кончились ---------- */
+      let bankKey = '';
+      function renderBank() {
+        const b = App.eco.bankrupt();
+        const key = !b ? 'none' : b.left > 0 ? 'wait' : 'ready:' + b.amount;
+        if (key === bankKey) {
+          if (b && b.left > 0) {
+            const t = bankHost.querySelector('[data-bank-left]');
+            if (t) t.textContent = 'Через ' + U.clock(b.left);
+          }
+          return;
+        }
+        bankKey = key;
+        if (!b) {
+          bankHost.innerHTML = '';
+          return;
+        }
+        bankHost.innerHTML = `<div class="bank">
+          <div class="bank-text"><b>Монеты закончились</b><span>${b.left > 0 ? 'Помощь скоро будет доступна' : 'Возьми помощь, чтобы продолжить'}</span></div>
+          ${b.left > 0
+            ? `<span class="bank-timer">${ui.svg('clock')}<span data-bank-left>Через ${U.clock(b.left)}</span></span>`
+            : `<button class="btn btn-gold btn-sm" data-bank-claim>Получить ${ui.cur(b.amount)}</button>`}
+        </div>`;
+      }
+
+      /* ---------- бесплатный подарок ---------- */
+      function gifts() {
+        return App.cases
+          .list()
+          .filter((cs) => App.cases.isFree(cs) && !App.cases.isLocked(cs) && cs.pool.length)
+          .sort((a, b) => (b.id === 'gift') - (a.id === 'gift'));
+      }
+      function renderGift() {
+        const list = gifts();
+        const first = App.stats.get('casesOpened') === 0;
+        const target = first ? list.find((cs) => App.cases.cooldownLeft(cs) <= 0) : null;
+        giftHost.innerHTML = list.length
+          ? `${target ? `<div class="onboard-hint">${ui.svg('gift')}<span>Начни с бесплатного подарка — нажми «Открыть»</span></div>` : ''}
+             <div class="gift-list">${list.map((cs) => giftCard(cs, cs === target)).join('')}</div>`
+          : '';
+      }
+      function tickGift() {
+        giftHost.querySelectorAll('[data-gift]').forEach((card) => {
+          const cs = App.data.getCase(card.dataset.gift);
+          const act = card.querySelector('[data-gift-act]');
+          if (!cs || !act) return;
+          const html = giftAction(cs);
+          if (act.innerHTML !== html) act.innerHTML = html;
+        });
+      }
+
+      /* ---------- кейсы по уровням ---------- */
+      const earlyOpen = () => lsGet(LS_EARLY) === '1';
+
+      function levelSection(level, cases, o) {
+        o = o || {};
+        return `<section class="lvl-sec">
+          <div class="lvl-head"><h2>Уровень ${level}</h2>${o.isNew ? '<span class="lvl-new">новые</span>' : ''}</div>
+          <div class="cs-grid">${cases.map((cs) => caseCard(cs, false)).join('')}</div>
         </section>`;
-      const $ = (sel) => ctx.el.querySelector(sel);
-      const render = () => {
-        const info = App.views.ladderInfo();
-        const ids = new Set(info.ladder.map((c) => c.id));
-        const specials = App.cases.list().filter((c) => !ids.has(c.id));
-        const o = { best: info.best && info.best.id };
-        $('[data-ladder-panel]').innerHTML = App.views.ladderPanel();
-        $('[data-specials-sec]').hidden = !specials.length;
-        $('[data-specials]').innerHTML = specials.map((c) => App.views.caseCard(c, o)).join('');
-        const list = info.ladder.filter((c) => !hideLocked || !App.cases.isLocked(c) || c === info.next);
-        $('[data-ladder]').innerHTML = list.length ? list.map((c) => App.views.caseCard(c, o)).join('') : ui.empty('📦', 'Кейсов нет', 'Добавь кейсы в data/cases.js');
-      };
-      render();
-      ctx.el.addEventListener('change', (e) => {
-        if (!e.target.matches('[data-hide-locked]')) return;
-        hideLocked = e.target.checked;
-        try { localStorage.setItem('waifudrop:hideLocked', hideLocked ? '1' : '0'); } catch (err) { /* ignore */ }
-        App.sfx.play('soft');
-        render();
+      }
+
+      function lockedSection(level, cases) {
+        const st = App.state;
+        let info;
+        if (level === st.level + 1) {
+          const need = App.eco.xpNeeded(st.level);
+          const left = Math.max(0, need - st.xp);
+          info = `<div class="lvl-lock-text">Откроется на ${level} уровне <span>· ещё ${U.fmt(left)} опыта</span></div>${ui.bar(need ? st.xp / need : 0)}`;
+        } else {
+          const n = level - st.level;
+          info = `<div class="lvl-lock-text">Откроется на ${level} уровне <span>· ещё ${n} ${U.plural(n, ['уровень', 'уровня', 'уровней'])}</span></div>`;
+        }
+        return `<section class="lvl-sec lvl-locked">
+          <div class="lvl-head"><h2>${ui.svg('lock')}<span>Уровень ${level}</span></h2></div>
+          <div class="lvl-lock-info">${info}</div>
+          <div class="cs-grid">${cases.map((cs) => caseCard(cs, true)).join('')}</div>
+        </section>`;
+      }
+
+      function renderLevels() {
+        const dev = App.settings.devMode;
+        const lvl = App.state.level;
+        // все платные кейсы (как App.data.ladder(), но и с необычными настройками из Конструктора)
+        const paid = App.cases
+          .list()
+          .filter((cs) => !App.cases.isFree(cs))
+          .sort((a, b) => (a.requiredLevel || 1) - (b.requiredLevel || 1) || a.price - b.price);
+        const levels = Array.from(new Set(paid.map((cs) => cs.requiredLevel || 1))).sort((a, b) => a - b);
+        const of = (l) => paid.filter((cs) => (cs.requiredLevel || 1) === l);
+        const open = levels.filter((l) => dev || l <= lvl).reverse(); // новые сверху
+        const next = dev ? null : levels.find((l) => l > lvl);
+        const recent = open.slice(0, 2);
+        const early = open.slice(2);
+
+        let html = recent.map((l, i) => levelSection(l, of(l), { isNew: i === 0 && open.length > 1 })).join('');
+        if (early.length) {
+          const n = early.reduce((s, l) => s + of(l).length, 0);
+          html += `<details class="early" data-early${earlyOpen() ? ' open' : ''}>
+            <summary>${ui.svg('next')}<span>Ранние кейсы</span><span class="early-n">${n}</span></summary>
+            <div class="early-body">${early.map((l) => levelSection(l, of(l))).join('')}</div>
+          </details>`;
+        }
+        if (next != null) html += lockedSection(next, of(next));
+        if (!html && !gifts().length) html = ui.empty('cases', 'Кейсов пока нет', 'Добавь кейсы в data/cases.js или в Конструкторе');
+        levelsHost.innerHTML = html;
+      }
+
+      function renderAll() {
+        if (!ctx.alive) return;
+        renderBank();
+        renderGift();
+        renderLevels();
+      }
+      renderAll();
+
+      ctx.el.addEventListener('click', (e) => {
+        if (e.target.closest('[data-bank-claim]')) {
+          App.eco.claimBankrupt();
+          renderBank();
+        }
       });
-      ctx.every(1000, () => App.views.tickCaseTimers(ctx.el));
-      ctx.on('levelup', render);
-      ctx.on('tickets', render);
-      ctx.on('xp', U.debounce(() => ctx.alive && ($('[data-ladder-panel]').innerHTML = App.views.ladderPanel()), 200));
+      // details: событие toggle не всплывает — ловим на погружении
+      ctx.listen(
+        ctx.el,
+        'toggle',
+        (e) => {
+          if (e.target.matches && e.target.matches('[data-early]')) lsSet(LS_EARLY, e.target.open ? '1' : '0');
+        },
+        true
+      );
+
+      ctx.every(1000, () => {
+        tickGift();
+        renderBank();
+      });
+      const rerender = U.debounce(renderAll, 120);
+      const rebank = U.debounce(() => ctx.alive && renderBank(), 120);
+      ctx.on('levelup', rerender);
+      ctx.on('xp', rerender);
+      ctx.on('settings', (s) => {
+        if (!s || !s.key || s.key === 'devMode') rerender();
+      });
+      ctx.on('balance', rebank);
+      ctx.on('inventory', rebank);
     },
   });
 
   /* ======================= Открытие кейса ======================= */
+  const COUNTS = [1, 3, 5, 10];
+  const PRE = 6; // сколько карточек слева/справа переносим со старой ленты, чтобы не было скачка
+
   App.router.register('case', {
-    title: 'Кейс',
+    title: (ctx) => {
+      const cs = App.data.getCase(ctx.params[0]);
+      return cs ? cs.name : 'Кейс';
+    },
     nav: 'cases',
     render(ctx) {
       const cs = App.data.getCase(ctx.params[0]);
       if (!cs) {
-        ctx.el.innerHTML = ui.empty('❓', 'Кейс не найден', 'Возможно, его удалили из data/cases.js', '<a class="btn btn-primary" href="#/cases">К кейсам</a>');
+        ctx.el.innerHTML = ui.empty('cases', 'Кейс не найден', 'Возможно, его убрали из игры.', '<a class="btn btn-primary" href="#/cases">К кейсам</a>');
         return;
       }
-      const isCooldown = !!cs.cooldown && !cs.price;
+      const free = App.cases.isFree(cs);
+      const empty = !cs.pool.length;
+      const multiAllowed = () => !free && !App.cases.isLocked(cs) && App.cases.maxCount() > 1;
       let count = 1;
-      let useTickets = false;
+      if (multiAllowed()) {
+        const saved = Number(lsGet(LS_COUNT));
+        if (COUNTS.includes(saved) && saved <= App.cases.maxCount()) count = saved;
+      }
+      const n = () => (multiAllowed() ? count : 1);
+
       let opening = false;
-      let reels = [];
-      const COUNTS = isCooldown || !cs.price ? [1] : [1, 2, 3, 5, 10];
-      const opened = App.stats.get('case_' + cs.id);
+      let fresh = true; // на этой странице ещё ничего не открывали
+      let skipFlips = false;
+      let release = null; // снять «занято» (ровно один раз за открытие)
+
+      const rtp = free ? null : App.data.caseRTP(cs);
+      const meta = !free && rtp != null && !empty
+        ? `Средний возврат ≈ ${Math.round(rtp * 100)}%${RISK[cs.risk] ? ' · ' + RISK[cs.risk] : ''}`
+        : '';
 
       ctx.el.innerHTML = `
-        <div class="case-page" style="--cc:${esc(cs.color)}">
-          <a class="back-link" href="#/cases">← Все кейсы</a>
-          <div class="case-hero">
-            <div class="case-hero-art">${ui.caseImg(cs)}</div>
-            <div class="case-hero-info">
-              <div class="case-hero-tags">
-                ${cs.badge ? `<span class="tag tag-accent">${esc(cs.badge)}</span>` : ''}
-                ${cs.requiredLevel > 1 ? `<span class="tag">Ур. ${cs.requiredLevel}+</span>` : ''}
-                ${cs.availableUntil ? `<span class="tag">До ${esc(cs.availableUntil)}</span>` : ''}
-                ${cs.pity ? `<span class="tag tag-gold">Гарант: ${esc(App.data.getRarity(cs.pity.rarity).name)}</span>` : ''}
-              </div>
-              <h1>${esc(cs.name)}</h1>
-              ${cs.description ? `<p class="muted">${esc(cs.description)}</p>` : ''}
-              <div class="case-hero-stats">
-                <div><span>Цена</span><b>${App.views.casePrice(cs)}</b></div>
-                ${App.views.rtp(cs) != null ? `<div title="В среднем из кейса выпадает персонажей на эту долю его цены"><span>Отдача</span><b>${App.views.rtp(cs)}%</b></div>` : ''}
-                <div><span>Персонажей</span><b>${cs.pool.length}</b></div>
-                <div><span>Ты открыл</span><b data-opened>${U.fmt(opened)}</b></div>
-                <div><span>Коллекция</span><b data-colprog></b></div>
-              </div>
-              <div class="case-hero-col small" data-colreward></div>
-            </div>
+        <a class="back-link" href="#/cases">${ui.svg('back')}<span>Кейсы</span></a>
+        <div class="co-head" style="${ccStyle(cs)}">
+          <div class="co-art">${ui.caseImg(cs)}</div>
+          <div class="co-info">
+            <h1>${esc(cs.name)}</h1>
+            <div class="co-price">${free ? `<span>${freeLabel(cs)}</span>` : ui.cur(cs.price)}</div>
+            ${meta ? `<div class="co-meta">${meta}</div>` : ''}
           </div>
+        </div>
 
-          <div class="opener panel" data-opener>
-            <div class="opener-idle" data-idle>
-              <div class="idle-cards">${cs.pool.slice(0, 5).map((e) => ui.card(e.cid, { size: 'sm', hideValue: true })).join('')}</div>
-              <div class="idle-text">Нажми «Открыть», чтобы запустить рулетку</div>
-            </div>
-            <div class="reels" data-reels></div>
-            <button class="btn btn-ghost btn-sm skip-btn" data-skip hidden>Пропустить ⏭</button>
-          </div>
+        <div class="panel co-stage idle" data-stage>
+          ${empty
+            ? ui.empty('cases', 'Кейс пуст', 'В нём пока нет персонажей.')
+            : `<div class="co-reel" data-reel></div>
+               <div class="co-grid" data-grid hidden></div>
+               <div class="co-overlay" data-overlay hidden><span>Нажми «Открыть»</span></div>`}
+        </div>
 
-          <div class="open-controls panel">
-            <div class="oc-row">
-              ${COUNTS.length > 1 ? `<div class="chips count-chips" data-counts>${COUNTS.map((n) => `<button class="chip${n === count ? ' active' : ''}" data-count="${n}">×${n}</button>`).join('')}</div>` : ''}
-              <button class="btn btn-primary btn-xl open-btn" data-open></button>
-            </div>
-            <div class="oc-row oc-extra">
-              <label class="switch-row" data-ticket-row hidden><input type="checkbox" data-tickets><span class="switch"></span><span data-ticket-label></span></label>
-              <div class="pity-box" data-pity hidden></div>
-              <div class="luck-box" data-luck hidden></div>
-              <div class="oc-speed">
-                <span class="muted small">Анимация:</span>
-                <div class="chips chips-sm" data-speed>
-                  ${[['normal', 'Обычная'], ['fast', 'Быстрая'], ['instant', 'Мгновенно']].map(([v, l]) => `<button class="chip${App.settings.animSpeed === v ? ' active' : ''}" data-sp="${v}">${l}</button>`).join('')}
-                </div>
-              </div>
-            </div>
-            <div class="oc-hint muted small">Пробел — открыть · S — пропустить анимацию</div>
-          </div>
+        <div class="co-controls" data-controls></div>
 
-          <section class="section">
-            <div class="section-head"><h2>Содержимое кейса</h2><span class="muted small">Шанс выпадения указан на карточках</span></div>
-            <div class="rar-strip">${App.data.rarities
-              .map((r) => {
-                const p = cs.pool.filter((e) => App.data.getChar(e.cid).rarity === r.id).reduce((s, e) => s + e.chance, 0);
-                return p > 0 ? `<div class="rar-chip r-${r.id}"><i class="dot"></i>${esc(r.name)} <b>${U.pct(p)}</b></div>` : '';
-              })
-              .join('')}${App.data.shinyChance(cs) > 0 ? `<div class="rar-chip shiny-chip">✨ Шайни <b>${U.pct(App.data.shinyChance(cs))}</b></div>` : ''}</div>
-            <div class="grid-cards" data-contents>${cs.pool
-              .map((e) => ui.card(e.cid, { size: 'md', chance: e.chance, silhouette: false, badge: App.inv.discovered(e.cid) ? '' : '<span class="cbadge cb-missing" title="Ещё нет в коллекции">?</span>' }))
-              .join('')}</div>
-          </section>
-        </div>`;
+        ${empty
+          ? ''
+          : `<section class="section co-contents">
+              <div class="section-head"><h2>Что внутри</h2><span class="muted small" data-prog></span></div>
+              <div class="grid-cards" data-contents></div>
+            </section>`}`;
 
       const $ = (s) => ctx.el.querySelector(s);
-      const openBtn = $('[data-open]');
-      const reelsHost = $('[data-reels]');
-      const idle = $('[data-idle]');
-      const skipBtn = $('[data-skip]');
+      const stage = $('[data-stage]');
+      const reelHost = $('[data-reel]');
+      const grid = $('[data-grid]');
+      const overlay = $('[data-overlay]');
+      const controls = $('[data-controls]');
 
-      function updateControls() {
-        const tickets = App.cases.tickets(cs);
-        const tr = $('[data-ticket-row]');
-        if (tickets > 0 && cs.price > 0) {
-          tr.hidden = false;
-          $('[data-ticket-label]').innerHTML = `Использовать билеты <b>🎟️ ${tickets}</b>`;
-          if (tickets < count) useTickets = false;
-          $('[data-tickets]').checked = useTickets;
-          $('[data-tickets]').disabled = tickets < count;
-        } else {
-          tr.hidden = true;
-          useTickets = false;
+      /* ---------- лента ---------- */
+      const smallScreen = () => window.matchMedia('(max-width: 600px)').matches;
+      let reel = null;
+      let reelSize = 0;
+      let reelItems = null;
+      let reelCenter = 0;
+
+      function buildReel() {
+        reelSize = smallScreen() ? 110 : 150;
+        reelHost.style.height = Math.round((reelSize * 4) / 3 + 50) + 'px';
+        reel = new App.Reel(reelHost, { size: reelSize, gap: 10 });
+        if (!reelItems) {
+          reelItems = [];
+          for (let i = 0; i < 24; i++) reelItems.push(App.cases.roll(cs));
+          reelCenter = 10;
         }
-        const chk = App.cases.check(cs, count, { useTickets });
-        let label;
-        if (opening) label = 'Открываем…';
-        else if (App.cases.isLocked(cs)) label = `🔒 Откроется на ${cs.requiredLevel} уровне`;
-        else if (isCooldown && App.cases.cooldownLeft(cs) > 0) label = `⏳ Через ${U.clock(App.cases.cooldownLeft(cs))}`;
-        else if (!cs.price) label = 'Открыть бесплатно';
-        else if (useTickets) label = `Открыть ×${count} за 🎟️ ${count}`;
-        else label = `Открыть${count > 1 ? ' ×' + count : ''} за ${ui.cur(cs.price * count, cs.currency)}`;
-        openBtn.innerHTML = label;
-        openBtn.disabled = opening || !chk.ok;
-        openBtn.title = chk.ok ? '' : chk.reason;
-        const pity = $('[data-pity]');
-        if (cs.pity) {
-          const left = cs.pity.count - (App.state.pity[cs.id] || 0);
-          pity.hidden = false;
-          pity.innerHTML = `<span>Гарант «${esc(App.data.getRarity(cs.pity.rarity).name)}» через <b>${left}</b> ${U.plural(left, ['открытие', 'открытия', 'открытий'])}</span>${ui.bar(1 - left / cs.pity.count, 'bar-gold')}`;
-        }
-        const luck = $('[data-luck]');
-        const lc = App.boosts.luckCharges();
-        luck.hidden = !lc;
-        luck.innerHTML = !lc
-          ? ''
-          : App.boosts.luckApplies(cs)
-            ? `🍀 Удача активна: ещё ${lc} ${U.plural(lc, ['открытие', 'открытия', 'открытий'])}`
-            : `🍀 Удача не действует на этот кейс — только на кейсы до ${ui.cur(App.boosts.luckMaxPrice())}`;
-        const prog = App.collection.caseProgress(cs);
-        $('[data-colprog]').textContent = `${prog.have}/${prog.total}`;
-        const claimed = App.collection.claimed(cs);
-        $('[data-colreward]').innerHTML = claimed
-          ? '<span class="good">✓ Коллекция кейса собрана, награда получена</span>'
-          : prog.done
-            ? `<a class="btn btn-gold btn-sm" href="#/collection/${esc(cs.id)}">Коллекция собрана — забрать награду</a>`
-            : `<span class="muted">📖 Собери всех персонажей кейса — награда</span> ${ui.reward(App.collection.reward(cs))}`;
-        $('[data-opened]').textContent = U.fmt(App.stats.get('case_' + cs.id));
-      }
-      updateControls();
-
-      function buildReels(results) {
-        reelsHost.innerHTML = '';
-        reels = [];
-        const n = results.length;
-        const size = n === 1 ? 170 : n === 2 ? 150 : n === 3 ? 130 : 112;
-        reelsHost.className = 'reels reels-' + n;
-        results.forEach((r) => {
-          const host = document.createElement('div');
-          reelsHost.appendChild(host);
-          const reel = new App.Reel(host, { size, gap: 10 });
-          const winIndex = 46 + U.randInt(0, 4);
-          reel.setItems(App.cases.strip(cs, { cid: r.item.cid, shiny: r.item.shiny }, winIndex + 8, winIndex));
-          reel.center(3);
-          reels.push({ reel, winIndex });
-        });
+        reel.setItems(reelItems);
+        reel.center(reelCenter);
       }
 
-      async function spinReels(results) {
-        buildReels(results);
-        const base = App.anim.dur(6200, 2300);
-        skipBtn.hidden = base === 0;
-        await Promise.all(
-          reels.map((r, i) =>
-            r.reel.spin(r.winIndex, {
-              duration: base ? base + i * (base > 3000 ? 280 : 120) : 0,
-              onTick: i === 0 ? () => App.tick() : null,
-            })
-          )
-        );
-        skipBtn.hidden = true;
-      }
-
-      async function flipGrid(results) {
-        reelsHost.innerHTML = `<div class="flip-grid">${results
-          .map(
-            (r, i) => `<div class="flip-card" data-i="${i}">
-              <div class="flip-inner">
-                <div class="flip-back"><span>🌸</span></div>
-                <div class="flip-front">${ui.card(r.item, { size: 'md', showNew: false })}</div>
-              </div>
-            </div>`
-          )
-          .join('')}</div>`;
-        reelsHost.className = 'reels reels-grid';
-        const cards = Array.from(reelsHost.querySelectorAll('.flip-card'));
-        const step = App.anim.dur(260, 90);
-        skipBtn.hidden = step === 0;
-        let skipped = step === 0;
-        skipFn = () => (skipped = true);
-        for (let i = 0; i < cards.length; i++) {
-          const tier = results[i].ch.r.index;
-          cards[i].classList.add('flipped', 'r-' + results[i].ch.rarity);
-          if (!skipped) {
-            App.sfx.play('flip');
-            if (tier >= 3) {
-              App.sfx.reveal(Math.min(tier, 3));
-              App.fx.burstAt(cards[i], [results[i].ch.r.color, '#fff'], 24);
-            }
-            await U.sleep(step + (tier >= 3 ? 220 : 0));
-            if (!ctx.alive) return;
+      // Новая лента: начало — те же карточки, что сейчас видны, поэтому прокрутка начинается без скачка
+      function prepStrip(cid) {
+        const winIndex = 40 + U.randInt(0, 5);
+        const items = App.cases.strip(cs, { cid }, winIndex + 8, winIndex);
+        let offset = 0;
+        if (reelItems) {
+          for (let k = -PRE; k <= PRE; k++) {
+            const src = reelItems[reelCenter + k];
+            if (src) items[PRE + k] = { cid: src.cid };
           }
+          offset = reel.pos - reel.targetFor(reelCenter, 0);
+          if (!isFinite(offset) || Math.abs(offset) > reelSize) offset = 0;
         }
-        skipFn = null;
-        skipBtn.hidden = true;
-        await U.sleep(skipped ? 50 : 350);
+        reel.setItems(items);
+        reel.pos = reel.targetFor(PRE, 0) + offset;
+        reel.apply(reel.pos);
+        reelItems = items;
+        reelCenter = winIndex;
+        return winIndex;
       }
 
-      let skipFn = null;
+      /* ---------- плитки для нескольких кейсов ---------- */
+      const placeholder = '<div class="ccard sm co-ph"><div class="ccard-art"></div><div class="ccard-info"><div class="ccard-name">&nbsp;</div></div></div>';
+      function renderTiles(k, results) {
+        grid.className = 'co-grid n' + k;
+        grid.innerHTML = Array.from(
+          { length: k },
+          (_, i) => `<div class="flip"><div class="flip-in">
+            <div class="flip-front">${results ? ui.card(results[i].item, { size: 'sm', hideValue: true, showNew: false }) : placeholder}</div>
+            <div class="flip-back">${ui.caseImg(cs)}</div>
+          </div></div>`
+        ).join('');
+      }
+
+      function showMode() {
+        if (empty) return;
+        if (n() === 1) {
+          grid.hidden = true;
+          reelHost.hidden = false;
+          if (!reel || reelSize !== (smallScreen() ? 110 : 150)) buildReel();
+          else reel.center(reelCenter);
+        } else {
+          reelHost.hidden = true;
+          grid.hidden = false;
+          renderTiles(n());
+        }
+        updateOverlay();
+      }
+
+      function updateOverlay() {
+        if (!overlay) return;
+        overlay.hidden = !(fresh && !opening && App.cases.check(cs, n()).ok);
+        stage.classList.toggle('idle', fresh);
+      }
+
+      /* ---------- кнопки ---------- */
+      function renderControls() {
+        const multi = multiAllowed();
+        if (!multi) count = 1;
+        controls.innerHTML = `
+          ${multi ? `<div class="co-seg" role="group" aria-label="Сколько открыть">${COUNTS.filter((k) => k <= App.cases.maxCount())
+            .map((k) => `<button class="${k === count ? 'active' : ''}" data-count="${k}">×${k}</button>`)
+            .join('')}</div>` : ''}
+          <button class="btn btn-primary btn-xl co-open" data-open></button>
+          <button class="btn btn-secondary btn-xl co-skip" data-skip hidden>Пропустить</button>`;
+        updateButton();
+      }
+
+      function updateButton() {
+        const btn = controls.querySelector('[data-open]');
+        if (!btn) return;
+        const k = n();
+        const chk = App.cases.check(cs, k);
+        const left = App.cases.cooldownLeft(cs);
+        let label;
+        if (App.cases.isLocked(cs)) label = `${ui.svg('lock')}<span>Откроется на ${cs.requiredLevel} уровне</span>`;
+        else if (empty) label = 'Кейс пуст';
+        else if (free && left > 0) label = `${ui.svg('clock')}<span>Через ${U.clock(left)}</span>`;
+        else if (free) label = 'Открыть бесплатно';
+        else if (!App.eco.can(cs.price * k)) label = 'Недостаточно монет';
+        else label = `Открыть за ${ui.cur(cs.price * k)}`;
+        if (btn.innerHTML !== label) btn.innerHTML = label;
+        btn.disabled = opening || !chk.ok;
+        controls.querySelectorAll('[data-count]').forEach((b) => (b.disabled = opening));
+      }
+
+      function setSpinning(on, canSkip) {
+        const open = controls.querySelector('[data-open]');
+        const skip = controls.querySelector('[data-skip]');
+        if (open) open.hidden = on;
+        if (skip) skip.hidden = !(on && canSkip);
+        updateButton();
+      }
+
+      /* ---------- что внутри ---------- */
+      const HAVE = `<span class="cbadge cb-have" title="Уже в коллекции">${ui.svg('check')}</span>`;
+      function renderContents() {
+        const host = $('[data-contents]');
+        if (!host) return;
+        host.innerHTML = cs.pool
+          .map((e) => ui.card(e.cid, { size: 'sm', chance: e.chance, badge: App.inv.discovered(e.cid) ? HAVE : '' }))
+          .join('');
+        const prog = $('[data-prog]');
+        if (prog) {
+          const p = App.collection.caseProgress(cs);
+          prog.textContent = App.features.unlocked('collection') && p.have ? `Собрано ${p.have} из ${p.total}` : '';
+        }
+      }
+
+      /* ---------- открытие ---------- */
+      async function spin(result) {
+        if (!reel) buildReel();
+        const win = prepStrip(result.item.cid);
+        const dur = App.anim.dur(5500, 2200);
+        setSpinning(true, dur > 0);
+        await reel.spin(win, { duration: dur, onTick: () => App.tick() });
+        if (dur > 0 && ctx.alive) await U.sleep(App.anim.dur(450, 220));
+      }
+
+      async function flip(results) {
+        renderTiles(results.length, results);
+        const tiles = Array.from(grid.children);
+        const step = App.anim.dur(120, 60);
+        skipFlips = step === 0;
+        grid.classList.toggle('instant', skipFlips);
+        setSpinning(true, step > 0);
+        void grid.offsetWidth; // чтобы переворот был анимированным
+        if (!skipFlips) await U.sleep(120);
+        for (let i = 0; i < tiles.length; i++) {
+          if (!ctx.alive) return;
+          tiles[i].classList.add('flipped');
+          if (skipFlips) continue;
+          App.sfx.play('flip');
+          const tier = results[i].ch ? results[i].ch.r.index : 0;
+          await U.sleep(step + (tier >= 4 ? 260 : 0));
+        }
+        if (!skipFlips && ctx.alive) await U.sleep(App.anim.dur(450, 220));
+      }
+
       function skip() {
-        reels.forEach((r) => r.reel.skip());
-        if (skipFn) skipFn();
+        if (reel) reel.skip();
+        skipFlips = true;
+        if (grid) grid.classList.add('instant');
       }
 
       async function doOpen() {
-        if (opening) return;
-        // «занято» включаем ДО открытия, чтобы окно нового уровня дождалось конца анимации
+        if (opening || !ctx.alive || empty || ui.topModal()) return;
+        const k = n();
+        // «занято» включаем ДО открытия: окно нового уровня дождётся конца анимации
         App.setBusy(true);
-        const results = App.cases.open(cs, count, { useTickets });
-        if (!results) {
+        let held = true;
+        const done = () => {
+          if (!held) return;
+          held = false;
           App.setBusy(false);
-          updateControls();
+        };
+        const results = App.cases.open(cs, k);
+        if (!results) {
+          done();
+          updateButton();
           return;
         }
+        release = done;
         opening = true;
-        updateControls();
-        idle.hidden = true;
+        fresh = false;
+        updateOverlay();
         App.sfx.play('open');
-        const fast = App.anim.speed() === 'instant';
         try {
-          if (fast) {
-            reelsHost.innerHTML = '';
-          } else if (results.length <= 5) await spinReels(results);
-          else await flipGrid(results);
-          if (!ctx.alive) {
-            App.setBusy(false);
-            App.feed.own(results.map((r) => r.item), cs.id);
-            return;
-          }
-          if (!fast && results.length <= 5) {
-            const best = results.reduce((b, r) => (r.ch.r.index > b.ch.r.index ? r : b), results[0]);
-            App.sfx.reveal(best.ch.r.index);
-            if (best.ch.r.index >= 3) reels.forEach((r) => App.fx.burstAt(r.reel.cells[r.winIndex], [best.ch.r.color, '#fff'], 30));
-            await U.sleep(App.anim.dur(650, 300));
+          if (k === 1) {
+            grid.hidden = true;
+            reelHost.hidden = false;
+            await spin(results[0]);
+          } else {
+            await flip(results);
           }
         } catch (e) {
           console.error(e);
         }
-        opening = false;
-        App.feed.own(results.map((r) => r.item), cs.id);
-        updateControls();
-        const pityHit = results.some((r) => r.pity);
-        if (pityHit) ui.toast('Сработал гарант! 🎯', 'gold');
-        ui.dropModal(
+        if (!ctx.alive) {
+          done();
+          return;
+        }
+        setSpinning(false);
+        const canAgain = App.cases.check(cs, k).ok;
+        const m = ui.dropModal(
           results.map((r) => r.item),
           {
-            title: results.length === 1 ? 'Тебе выпала!' : `Открыто ${results.length} ${U.plural(results.length, ['кейс', 'кейса', 'кейсов'])}!`,
             firsts: new Set(results.filter((r) => r.first).map((r) => r.item.uid)),
-            again: () => doOpen(),
+            again: canAgain
+              ? () => {
+                  if (ctx.alive && !opening && !ui.topModal()) doOpen();
+                }
+              : null,
             againLabel: 'Открыть ещё',
             onClose: () => {
-              App.setBusy(false);
-              if (ctx.alive) {
-                updateControls();
-                refreshContents();
-              }
+              opening = false;
+              done();
+              if (ctx.alive) refresh();
             },
           }
         );
+        if (!m) {
+          opening = false;
+          done();
+          refresh();
+        }
       }
 
-      function refreshContents() {
-        const grid = $('[data-contents]');
-        grid.querySelectorAll('.ccard').forEach((card) => {
-          const missing = card.querySelector('.cb-missing');
-          if (missing && App.inv.discovered(card.dataset.cid)) missing.remove();
-        });
+      function refresh() {
+        if (!ctx.alive) return;
+        const multiWas = !!controls.querySelector('[data-count]');
+        if (multiWas !== multiAllowed()) {
+          renderControls();
+          showMode();
+        } else updateButton();
+        updateOverlay();
+        renderContents();
       }
 
+      /* ---------- события ---------- */
       ctx.el.addEventListener('click', (e) => {
         const t = e.target;
         const cb = t.closest('[data-count]');
         if (cb) {
-          count = Number(cb.dataset.count);
-          ctx.el.querySelectorAll('[data-count]').forEach((x) => x.classList.toggle('active', x === cb));
+          if (opening) return;
+          count = Number(cb.dataset.count) || 1;
+          lsSet(LS_COUNT, String(count));
+          controls.querySelectorAll('[data-count]').forEach((b) => b.classList.toggle('active', b === cb));
           App.sfx.play('soft');
-          updateControls();
-          return;
-        }
-        const sp = t.closest('[data-sp]');
-        if (sp) {
-          App.store.setSetting('animSpeed', sp.dataset.sp);
-          ctx.el.querySelectorAll('[data-sp]').forEach((x) => x.classList.toggle('active', x === sp));
-          App.sfx.play('soft');
+          updateButton();
+          showMode();
           return;
         }
         if (t.closest('[data-open]')) {
@@ -454,26 +564,56 @@
         const card = t.closest('[data-contents] .ccard');
         if (card) ui.showChar(card.dataset.cid);
       });
-      ctx.el.addEventListener('change', (e) => {
-        if (e.target.matches('[data-tickets]')) {
-          useTickets = e.target.checked;
-          updateControls();
-        }
-      });
+
       ctx.listen(document, 'keydown', (e) => {
-        if (e.target.closest('input, textarea, select')) return;
-        if (e.code === 'Space' && !ui.topModal()) {
+        if (ui.topModal() || e.ctrlKey || e.metaKey || e.altKey) return;
+        if (e.target.closest && e.target.closest('input, textarea, select, [contenteditable]')) return;
+        if (e.code === 'Space') {
           e.preventDefault();
-          if (!opening) doOpen();
+          if (e.repeat) return;
+          if (opening) skip();
+          else doOpen();
         } else if (e.code === 'KeyS' && opening) skip();
       });
+
+      ctx.listen(
+        window,
+        'resize',
+        U.debounce(() => {
+          if (!ctx.alive || opening || empty || n() !== 1) return;
+          if (reelSize !== (smallScreen() ? 110 : 150)) buildReel();
+          else if (reel) reel.center(reelCenter);
+        }, 150)
+      );
+
       ctx.every(1000, () => {
-        if (!opening && isCooldown) updateControls();
+        if (!opening && free) {
+          updateButton();
+          updateOverlay();
+        }
       });
-      ctx.on('balance', () => !opening && updateControls());
-      ctx.on('tickets', () => !opening && updateControls());
-      ctx.on('boosts', () => !opening && updateControls());
-      ctx.onDestroy(() => skip());
+      ctx.on('balance', () => {
+        if (!opening) {
+          updateButton();
+          updateOverlay();
+        }
+      });
+      ctx.on('levelup', () => !opening && refresh());
+      ctx.on('settings', (s) => {
+        if (!opening && (!s || !s.key || s.key === 'devMode')) {
+          renderControls();
+          showMode();
+        }
+      });
+      // ушли со страницы посреди анимации — досрочно останавливаем и снимаем «занято»
+      ctx.onDestroy(() => {
+        skip();
+        if (release) release();
+      });
+
+      renderControls();
+      showMode();
+      renderContents();
     },
   });
 })();

@@ -35,7 +35,7 @@
     feature: 'inventory',
     render(ctx) {
       let limit = PAGE;
-      let toolsKey = '';
+      let toolsKey = null;
 
       ctx.el.innerHTML = `
         <div class="page-head">
@@ -52,7 +52,7 @@
         const n = App.state.inventory.length;
         $('[data-summary]').innerHTML = n
           ? `${U.fmt(n)} ${U.plural(n, ['персонаж', 'персонажа', 'персонажей'])} · стоимость ${ui.cur(total)}`
-          : 'Здесь хранятся выпавшие персонажи';
+          : '';
         if (!n) {
           $('[data-actions]').innerHTML = '';
           return;
@@ -60,8 +60,8 @@
         const d = App.inv.duplicates();
         const dv = d.reduce((s, it) => s + App.inv.value(it), 0);
         $('[data-actions]').innerHTML = `
-          <button class="btn btn-primary btn-sm" data-act="dupes"${d.length ? '' : ' disabled title="У тебя по одному каждого персонажа"'}>
-            Продать дубликаты${d.length ? ' ' + ui.cur(dv) : ''}
+          <button class="btn btn-primary btn-sm" data-act="dupes"${d.length ? ` title="Оставить по одному каждого персонажа: ${U.fmt(d.length)} шт. за ${U.fmt(dv)}"` : ' disabled title="У тебя по одному каждого персонажа"'}>
+            Продать дубликаты${d.length ? ' ' + ui.cur(dv, { short: true }) : ''}
           </button>
           <button class="btn btn-secondary btn-sm" data-act="all">Продать всё</button>`;
       }

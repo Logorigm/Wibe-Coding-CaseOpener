@@ -1,1 +1,31 @@
-/* inventory */
+/* =====================================================================
+   ИНВЕНТАРЬ
+   ===================================================================== */
+.page-inventory .inv-actions { display: flex; flex-wrap: wrap; gap: 8px; }
+
+/* фильтры: редкость, поиск, сортировка */
+.page-inventory .inv-tools { display: flex; align-items: center; gap: 10px; margin-bottom: 16px; }
+.page-inventory .inv-tools .chips { flex: 1 1 auto; min-width: 0; gap: 6px; }
+.page-inventory .inv-tools .chip { height: 32px; padding: 0 11px; }
+.page-inventory .inv-search { flex: 0 1 220px; min-width: 140px; min-height: 36px; }
+.page-inventory .inv-tools .select { flex: none; width: auto; min-height: 36px; }
+
+.page-inventory .inv-more { display: flex; justify-content: center; margin-top: 20px; }
+.page-inventory .inv-more:empty, .page-inventory [data-summary]:empty { display: none; }
+.page-inventory .ccard:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+
+.inv-note { margin-top: 8px; }
+
+@media (max-width: 600px) {
+  .page-inventory .page-head { margin-bottom: 16px; }
+  .page-inventory .inv-actions { width: 100%; }
+  .page-inventory .inv-actions .btn { flex: 1 1 auto; padding: 0 10px; }
+
+  .page-inventory .inv-tools { flex-wrap: wrap; gap: 8px; }
+  /* на телефоне у редкостей остаются только цветные точки */
+  .page-inventory .inv-tools .chips { order: -1; flex: 1 1 100%; flex-wrap: nowrap; gap: 4px; }
+  .page-inventory .inv-tools .chip { flex: 1 1 0; min-width: 0; justify-content: center; padding: 0 4px; }
+  .page-inventory .inv-tools .chip span { display: none; }
+  .page-inventory .inv-tools .chip .dot { width: 10px; height: 10px; }
+  .page-inventory .inv-search { flex: 1 1 0; width: auto; min-width: 0; }
+}

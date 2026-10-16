@@ -1,6 +1,6 @@
-/* Мини-игра «Джекпот»: однорукий бандит с прогрессивной копилкой.
- * Каждая ставка пополняет копилку, три символа с jackpot: true (👑👑👑) забирают её.
- * Символы, выплаты и параметры копилки — в data/config.js → games.jackpot */
+/* Мини-игра «Джекпот»: однорукий бандит с копилкой.
+ * Каждая ставка пополняет копилку, три символа с jackpot: true забирают её.
+ * Символы, выплаты и параметры копилки — data/config.js → games.jackpot */
 (function () {
   'use strict';
   const App = window.App;
@@ -10,13 +10,14 @@
   const CFG = GAME_DATA.config;
 
   const cfg = () => CFG.games.jackpot;
-  const easeOutBack = (t) => {
-    const c1 = 1.1;
+  const easeOut = (t) => {
+    // мягкая остановка с небольшим «доводом»
+    const c1 = 0.9;
     const c3 = c1 + 1;
     return 1 + c3 * Math.pow(t - 1, 3) + c1 * Math.pow(t - 1, 2);
   };
 
-  /* ---------- копилка (хранится в сохранении) ---------- */
+  /* ---------- копилка (хранится в сохранении: App.state.jackpot) ---------- */
   const JP = {
     seed: () => Math.round((cfg().seed || 1000) * App.eco.scale()),
     fullBet: () => Math.max(1, Math.round((cfg().fullBet || 500) * App.eco.scale())),
@@ -25,6 +26,7 @@
       if (!st.jackpot || typeof st.jackpot.pool !== 'number' || !(st.jackpot.pool >= 0)) {
         st.jackpot = { pool: JP.seed(), wins: 0, last: null };
       }
+      if (st.jackpot.pool < JP.seed()) st.jackpot.pool = JP.seed();
       return st.jackpot;
     },
     pool: () => Math.floor(JP.state().pool),
@@ -32,6 +34,7 @@
     share: (bet) => Math.min(1, bet / JP.fullBet()),
     add(amount) {
       JP.state().pool += amount;
+      App.store.dirty();
     },
     // забрать (часть) копилки; копилка не опускается ниже стартовой суммы
     take(bet) {
@@ -40,22 +43,16 @@
       s.pool = Math.max(s.pool - win, JP.seed());
       s.wins = (s.wins || 0) + 1;
       s.last = { amount: win, at: Date.now() };
+      App.store.dirty();
       return win;
     },
   };
   App.jackpot = JP;
 
-  // Средний возврат без учёта копилки (для правил)
-  function baseRtp() {
-    const syms = cfg().symbols;
-    const total = syms.reduce((s, x) => s + x.weight, 0);
-    return syms.reduce((s, x) => {
-      const p = x.weight / total;
-      return s + (x.jackpot ? 0 : (x.x3 || 0) * p * p * p) + (x.x2 || 0) * p * p * (1 - p);
-    }, 0);
-  }
+  const symbols = () => cfg().symbols;
+  const jpSymbol = () => symbols().find((s) => s.jackpot) || symbols()[symbols().length - 1];
   function jackpotOdds() {
-    const syms = cfg().symbols;
+    const syms = symbols();
     const total = syms.reduce((s, x) => s + x.weight, 0);
     const p = syms.filter((x) => x.jackpot).reduce((s, x) => s + Math.pow(x.weight / total, 3), 0);
     return p > 0 ? Math.round(1 / p) : 0;
@@ -64,111 +61,126 @@
   App.games.register({
     id: 'jackpot',
     name: 'Джекпот',
-    icon: '🎰',
-    color: '#f97316',
-    short: 'Три короны — забери копилку',
-    desc: 'Однорукий бандит с прогрессивным джекпотом: каждая ставка пополняет копилку, а 👑👑👑 забирают её целиком!',
-    flag: () => `💰 ${U.short(JP.pool())}`,
+    icon: 'slots',
+    short: 'Однорукий бандит с копилкой',
     get rules() {
       const c = cfg();
-      return `<p>Выигрыш считается по центральной линии: три одинаковых символа — большой множитель, два одинаковых слева — маленький.</p>
-        <p><b>Копилка джекпота</b> растёт с каждой ставки (${U.pct(c.contribution || 0, 0)} от ставки). Три 👑 забирают её:
-        при ставке от ${ui.cur(JP.fullBet())} — целиком, при меньшей — пропорционально ставке.</p>
-        <p>Шанс джекпота — примерно 1 к ${U.fmt(jackpotOdds())} за спин. Средний возврат без джекпота — ${U.pct(baseRtp(), 1)}.</p>
-        <p class="muted">Пробел — крутить.</p>`;
+      const jp = jpSymbol();
+      return `<p>Выигрыш считается по средней линии: три одинаковых символа — большой множитель, два одинаковых слева — маленький.</p>
+        <p>Каждая ставка пополняет копилку на ${U.pct(c.contribution || 0, 0)}. Три ${esc(jp.icon)} забирают копилку:
+        при ставке от ${ui.cur(JP.fullBet())} — целиком, при меньшей — часть, пропорционально ставке.</p>
+        <p>Шанс джекпота — примерно 1 к ${U.fmt(jackpotOdds())} за спин.</p>`;
     },
     render(ctx, host) {
-      const syms = cfg().symbols;
+      const syms = symbols();
       const pick = () => U.weighted(syms, (s) => s.weight);
-      let spinning = false;
       let auto = 0; // сколько автоспинов осталось
+      let pending = null;
       let shownPool = JP.pool();
-      let poolAnim = 0;
+      let poolRaf = 0;
       const visible = [0, 1, 2].map(() => [pick(), pick(), pick()]);
+      const rafs = [0, 0, 0];
 
       host.innerHTML = `
         <div class="game-layout">
           <div class="game-panel panel">
             <div data-bet></div>
-            <div class="jp-share small" data-share></div>
-            <button class="btn btn-primary btn-xl btn-block" data-go>🎰 Крутить</button>
-            <div class="field"><span>Автоспин</span>
-              <div class="chips chips-sm" data-autos>${[10, 25, 50].map((n) => `<button class="chip" data-auto="${n}">×${n}</button>`).join('')}<button class="chip" data-auto="stop" hidden>⏹ Стоп</button></div>
+            <div class="game-note" data-share></div>
+            <button class="btn btn-primary btn-xl btn-block" data-go>Крутить</button>
+            <div class="jp-auto">
+              <span>Автоспин</span>
+              <button type="button" class="chip" data-auto="10">×10</button>
+              <button type="button" class="chip" data-auto="25">×25</button>
+              <button type="button" class="chip" data-auto="stop" hidden>Стоп</button>
             </div>
-            <div class="paytable">
-              <div class="pt-head"><span>Символ</span><span>3 в ряд</span><span>2 слева</span></div>
+            <div class="jp-pay">
+              <div class="jp-pay-head"><span>Выплаты</span><span>3 в ряд</span><span>2 слева</span></div>
               ${syms
                 .slice()
                 .reverse()
                 .map(
-                  (s) => `<div class="pt-row${s.jackpot ? ' pt-jp' : ''}"><span class="pt-sym">${s.icon}${s.icon}${s.icon}</span><b>${s.jackpot ? 'ДЖЕКПОТ' : '×' + s.x3}</b><span class="muted">${s.x2 ? '×' + s.x2 : '—'}</span></div>`
+                  (s) => `<div class="jp-pay-row${s.jackpot ? ' jp' : ''}"><span class="jp-sym">${esc(s.icon)}</span><b>${s.jackpot ? 'копилка' : '×' + s.x3}</b><span>${s.x2 ? '×' + s.x2 : '—'}</span></div>`
                 )
                 .join('')}
             </div>
           </div>
-          <div class="game-stage panel slots-stage">
-            <div class="jp-counter" data-jp>
-              <div class="jp-label">👑 ДЖЕКПОТ 👑</div>
-              <div class="jp-value"><span data-pool>${U.fmt(shownPool)}</span>${ui.icon('coins')}</div>
-              <div class="jp-meta muted small" data-jpmeta></div>
-            </div>
-            <div class="slot-machine">
-              <div class="slot-top">🌸 WAIFU JACKPOT 🌸</div>
-              <div class="slot-window">
-                ${[0, 1, 2].map((i) => `<div class="slot-reel"><div class="slot-strip" data-strip="${i}"></div></div>`).join('')}
-                <div class="slot-line"></div>
+          <div class="game-main">
+            <div class="game-stage panel jp-stage">
+              <div class="jp-counter" data-jp>
+                <div class="jp-label">Джекпот</div>
+                <div class="jp-value">${ui.coin()}<b data-pool>${U.fmt(shownPool)}</b></div>
+                <div class="jp-meta" data-meta></div>
               </div>
-              <div class="slot-result" data-result>Удачи!</div>
+              <div class="jp-window" data-window>
+                ${[0, 1, 2].map((i) => `<div class="jp-reel"><div class="jp-strip" data-strip="${i}"></div></div>`).join('')}
+                <div class="jp-line"></div>
+              </div>
             </div>
+            <div class="game-result" data-result></div>
           </div>
         </div>`;
       const $ = (s) => host.querySelector(s);
       const bet = App.widgets.betInput($('[data-bet]'), { key: 'jackpot', onChange: () => renderShare() });
       const strips = [0, 1, 2].map((i) => $(`[data-strip="${i}"]`));
-      const cellHtml = (s, cls) => `<div class="slot-cell ${cls || ''}">${esc(s.icon)}</div>`;
-      const cellSize = () => parseFloat(getComputedStyle($('.slot-window')).getPropertyValue('--cell')) || 92;
+      const goBtn = $('[data-go]');
+      const cellHtml = (s, cls) => `<div class="jp-cell${cls ? ' ' + cls : ''}">${esc(s.icon)}</div>`;
+      const cellSize = () => {
+        const c = strips[0].querySelector('.jp-cell');
+        return c ? c.getBoundingClientRect().height : 80;
+      };
 
       function renderShare() {
-        const share = JP.share(bet.value || 0);
+        const v = bet.value || 0;
+        const share = JP.share(v);
         $('[data-share]').innerHTML =
-          share >= 1
-            ? '<span class="good">✓ Ставка забирает весь джекпот</span>'
-            : `Твоя доля джекпота: <b>${U.pct(share, 0)}</b> · весь — при ставке от ${ui.cur(JP.fullBet())}`;
+          share >= 1 ? 'Ставка забирает всю копилку' : `Доля копилки: <b>${U.pct(share, share < 0.1 ? 1 : 0)}</b> · вся — от ${ui.cur(JP.fullBet())}`;
       }
       function renderMeta() {
         const s = JP.state();
-        $('[data-jpmeta]').innerHTML = s.last
-          ? `Последний джекпот: ${ui.cur(s.last.amount)} · ${new Date(s.last.at).toLocaleDateString('ru-RU')}`
-          : `Шанс — 1 к ${U.fmt(jackpotOdds())} за спин`;
+        $('[data-meta]').innerHTML = s.last ? `Последний выигрыш: ${ui.cur(s.last.amount)}` : `Шанс 1 к ${U.fmt(jackpotOdds())}`;
       }
       // плавный счётчик копилки
       function animatePool() {
         const target = JP.pool();
-        cancelAnimationFrame(poolAnim);
+        cancelAnimationFrame(poolRaf);
         const from = shownPool;
+        const el = $('[data-pool]');
         if (from === target) return;
         const t0 = performance.now();
-        const dur = Math.abs(target - from) > target * 0.5 ? 1200 : 450;
+        const dur = 500;
         const step = (now) => {
           if (!ctx.alive) return;
           const k = Math.min(1, (now - t0) / dur);
           shownPool = Math.round(from + (target - from) * (1 - Math.pow(1 - k, 3)));
-          $('[data-pool]').textContent = U.fmt(shownPool);
-          if (k < 1) poolAnim = requestAnimationFrame(step);
+          el.textContent = U.fmt(shownPool);
+          if (k < 1) poolRaf = requestAnimationFrame(step);
         };
-        poolAnim = requestAnimationFrame(step);
+        poolRaf = requestAnimationFrame(step);
       }
-
       function drawStatic() {
         strips.forEach((st, i) => {
           st.style.transform = 'translateY(0)';
           st.innerHTML = visible[i].map((s, r) => cellHtml(s, r === 1 ? 'mid' : '')).join('');
         });
       }
+      function setResult(html, cls) {
+        const el = $('[data-result]');
+        el.className = 'game-result' + (cls ? ' ' + cls : '');
+        el.innerHTML = html;
+      }
+      function setAuto(n) {
+        auto = n;
+        host.querySelectorAll('[data-auto]').forEach((b) => {
+          if (b.dataset.auto === 'stop') {
+            b.hidden = !auto;
+            b.textContent = `Стоп · ${auto}`;
+          } else b.hidden = !!auto;
+        });
+      }
 
       function spinReel(i, result, dur) {
         const st = strips[i];
-        const n = 16 + i * 6;
+        const n = 14 + i * 5;
         const seq = visible[i].slice();
         for (let k = 0; k < n; k++) seq.push(pick());
         const top = pick();
@@ -189,46 +201,31 @@
           const frame = (now) => {
             if (!ctx.alive) return resolve();
             const t = Math.min(1, (now - t0) / dur);
-            const y = end * easeOutBack(t);
-            st.style.transform = `translateY(${-y}px)`;
+            const y = end * easeOut(t);
+            st.style.transform = `translateY(${(-y).toFixed(1)}px)`;
             const c = Math.floor(y / CELL);
             if (c !== lastCell && t < 0.9) {
               lastCell = c;
               if (i === 0) App.tick(600 + U.rand() * 400);
             }
-            if (t < 1) requestAnimationFrame(frame);
+            if (t < 1) rafs[i] = requestAnimationFrame(frame);
             else {
               App.sfx.play('tickLow');
               resolve();
             }
           };
-          requestAnimationFrame(frame);
-        });
-      }
-
-      function setAuto(n) {
-        auto = n;
-        host.querySelectorAll('[data-auto]').forEach((b) => {
-          if (b.dataset.auto === 'stop') {
-            b.hidden = !auto;
-            b.textContent = `⏹ Стоп (${auto})`;
-          } else b.hidden = !!auto;
+          rafs[i] = requestAnimationFrame(frame);
         });
       }
 
       async function spin() {
-        if (spinning) return;
-        const b = bet.take();
-        if (b == null || !App.eco.spend(b, 'coins')) {
+        if (pending) return;
+        const b = App.games.charge(bet);
+        if (b == null) {
           setAuto(0);
           return;
         }
-        spinning = true;
-        bet.disable(true);
-        $('[data-go]').disabled = true;
-        $('[data-result]').innerHTML = '…';
-        host.querySelectorAll('.slot-cell.win').forEach((c) => c.classList.remove('win'));
-        // ставка пополняет копилку
+        // ставка пополняет копилку; результат известен сразу
         JP.add(b * (cfg().contribution || 0));
         animatePool();
         const res = [pick(), pick(), pick()];
@@ -238,24 +235,34 @@
         if (res[0].id === res[1].id && res[1].id === res[2].id) {
           count = 3;
           if (res[0].jackpot) jackpot = JP.take(b);
-          else mult = res[0].x3;
+          else mult = res[0].x3 || 0;
         } else if (res[0].id === res[1].id && res[0].x2) {
           mult = res[0].x2;
           count = 2;
         }
         const payout = jackpot || Math.floor(b * mult);
-        App.store.dirty();
-        const base = App.anim.dur(1300, 450);
-        await Promise.all([0, 1, 2].map((i) => spinReel(i, res[i], base ? base + i * (base > 900 ? 380 : 140) : 0)));
-        // выплата после остановки барабанов (если ушли со страницы — всё равно засчитаем)
-        if (payout) App.eco.add(payout, 'coins');
-        if (jackpot) App.stats.inc('jackpotsWon');
-        App.games.record('jackpot', b, payout);
-        spinning = false;
+        const p = (pending = { done: false });
+        p.settle = () => {
+          if (p.done) return;
+          p.done = true;
+          if (payout) App.eco.add(payout);
+          if (jackpot) App.stats.inc('jackpotsWon');
+          App.games.record('jackpot', b, payout);
+          App.setBusy(false);
+        };
+        App.setBusy(true);
+        bet.disable(true);
+        goBtn.disabled = true;
+        setResult('&nbsp;');
+        host.querySelectorAll('.jp-cell.win').forEach((c) => c.classList.remove('win'));
+
+        const base = App.anim.dur(1200, 450);
+        await Promise.all([0, 1, 2].map((i) => spinReel(i, res[i], base ? base + i * (base > 800 ? 320 : 120) : 0)));
+        p.settle();
+        pending = null;
         if (!ctx.alive) return;
         bet.disable(false);
-        $('[data-go]').disabled = false;
-        const out = $('[data-result]');
+        goBtn.disabled = false;
         if (count) {
           strips.slice(0, count).forEach((st) => {
             const f = st.querySelector('.final');
@@ -264,59 +271,60 @@
         }
         if (jackpot) {
           App.sfx.play('bigwin');
-          App.fx.confetti({ count: 320 });
-          $('[data-jp]').classList.add('hit');
-          ctx.after(2600, () => $('[data-jp]').classList.remove('hit'));
-          out.innerHTML = `<span class="gold-text">👑 ДЖЕКПОТ! ${ui.cur(jackpot)} 👑</span>`;
-          ui.toast(`<b>ДЖЕКПОТ!</b> ${ui.cur(jackpot)}`, 'gold', { icon: '🎰', timeout: 6000 });
+          App.fx.confetti({ count: 160 });
           animatePool();
           renderMeta();
+          setResult(`Джекпот! <b class="good">${ui.cur(jackpot, { sign: true })}</b>`);
           setAuto(0);
         } else if (payout > b) {
           App.sfx.play(mult >= 20 ? 'bigwin' : 'win');
-          if (mult >= 20) App.fx.confetti({ count: mult >= 50 ? 220 : 140 });
-          out.innerHTML = `<span class="good">${count === 3 ? 'ТРИ В РЯД!' : 'Пара!'} ×${mult} → ${ui.cur(payout)}</span>`;
+          setResult(`${count === 3 ? 'Три в ряд' : 'Пара'} ×${mult} · выигрыш <b class="good">${ui.cur(payout, { sign: true })}</b>`);
           if (mult >= 20) setAuto(0);
         } else if (payout > 0) {
           App.sfx.play('coin');
-          out.innerHTML = `<span class="muted">×${mult} — вернулось ${ui.cur(payout)}</span>`;
+          setResult(`×${mult} · вернулось ${ui.cur(payout)}`);
         } else {
-          out.innerHTML = '<span class="muted">Мимо… ещё разок?</span>';
+          setResult('Мимо', 'muted');
         }
         renderShare();
         if (auto > 0) {
           setAuto(auto - 1);
-          if (auto > 0) ctx.after(App.anim.dur(450, 250) || 150, spin);
+          if (auto > 0) ctx.after(App.anim.dur(450, 220) || 150, spin);
         }
       }
 
       host.addEventListener('click', (e) => {
-        if (e.target.closest('[data-go]')) {
-          spin();
-          return;
-        }
+        if (e.target.closest('[data-go]')) return spin();
         const a = e.target.closest('[data-auto]');
-        if (a) {
-          App.sfx.play('soft');
-          if (a.dataset.auto === 'stop') setAuto(0);
-          else {
-            setAuto(Number(a.dataset.auto));
-            spin();
-          }
+        if (!a) return;
+        App.sfx.play('soft');
+        if (a.dataset.auto === 'stop') setAuto(0);
+        else {
+          setAuto(Number(a.dataset.auto));
+          if (!pending) spin();
         }
       });
       ctx.listen(document, 'keydown', (e) => {
-        if (e.code !== 'Space' || e.target.closest('input, select, textarea') || ui.topModal()) return;
+        if (e.code !== 'Space' || e.repeat || e.target.closest('input, select, textarea, button') || ui.topModal()) return;
         e.preventDefault();
         spin();
       });
       ctx.on('levelup', () => {
         renderShare();
+        animatePool();
       });
-      ctx.onDestroy(() => cancelAnimationFrame(poolAnim));
+      // ушёл во время вращения — выигрыш всё равно засчитывается
+      ctx.onDestroy(() => {
+        cancelAnimationFrame(poolRaf);
+        rafs.forEach((r) => cancelAnimationFrame(r));
+        auto = 0;
+        if (pending) pending.settle();
+      });
+
       drawStatic();
       renderShare();
       renderMeta();
+      setResult('Удачи!', 'muted');
     },
   });
 })();
