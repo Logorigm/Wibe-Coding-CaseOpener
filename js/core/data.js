@@ -15,12 +15,11 @@
   G.autoCharacters = G.autoCharacters || [];
   G.cases = G.cases || [];
   G.achievements = G.achievements || [];
-  G.promocodes = G.promocodes || [];
   const CFG = G.config;
 
   const ECO = () =>
     Object.assign(
-      { baseValue: 10, defaultRtp: 0.9, freeCaseValue: 30, dustRate: 0.25, craftRate: 1, scaleBase: 100 },
+      { baseValue: 10, defaultRtp: 0.9, freeCaseValue: 30 },
       CFG.economy || {}
     );
 
@@ -72,13 +71,10 @@
     D.rarities.forEach((r) => (rw[r.id] = r.weight));
     if (raw.rarityWeights) Object.assign(rw, raw.rarityWeights);
     const out = [];
-    const curated = (demo.characters || []).filter((c) => c && c.case === raw.id && D._r[c.rarity]);
-    curated.forEach((c) => out.push(Object.assign({}, c, { cases: [raw.id], demo: true })));
     const rng = U.seeded('demo:' + raw.id);
     D.rarities.forEach((r) => {
       const w = Number(rw[r.id]) || 0;
-      let need = w >= 1 ? per[r.id] || 1 : w >= 0.2 ? 1 : 0;
-      need -= curated.filter((c) => c.rarity === r.id).length;
+      const need = w >= 1 ? per[r.id] || 1 : w >= 0.2 ? 1 : 0;
       for (let i = 0; i < need; i++) {
         let name = '';
         for (let t = 0; t < 20 && (!name || used.has(name)); t++) name = `${U.pick(DEMO_GIVEN, rng)} ${U.pick(DEMO_FAMILY, rng)}`;
@@ -87,7 +83,6 @@
           id: `demo_${raw.id}_${r.id}_${i + 1}`,
           name,
           rarity: r.id,
-          series: raw.name || raw.id,
           description: `Демо-персонаж кейса «${raw.name || raw.id}». Добавь своих персонажей в этот кейс — и демо исчезнут.`,
           cases: [raw.id],
           demo: true,
@@ -223,15 +218,15 @@
   function makeCase(raw) {
     const id = String(raw.id);
     const cs = Object.assign(
-      { price: 0, currency: 'coins', category: 'standard', color: '#ff6fb5', requiredLevel: 1, emblem: 'star' },
+      { price: 0, color: '#ff6fb5', requiredLevel: 1, risk: 'mid' },
       raw,
       { id, name: raw.name || id }
     );
     cs.autoPrice = raw.price === 'auto';
-    cs.price = cs.autoPrice ? 0 : Math.max(0, Number(cs.price) || 0);
+    cs.price = cs.autoPrice ? 0 : Math.max(0, Math.round(Number(cs.price) || 0));
+    cs.currency = 'coins';
     cs.requiredLevel = Math.max(1, Number(cs.requiredLevel) || 1);
     cs.rtp = raw.rtp != null && Number(raw.rtp) > 0 ? Number(raw.rtp) : ECO().defaultRtp;
-    if (cs.currency !== 'gems') cs.currency = 'coins';
     const entries = new Map();
     expandItems(cs, raw.items, entries);
     D.chars.forEach((c) => {
@@ -243,15 +238,6 @@
     cs.pool = computePool(cs, Array.from(entries.entries()));
     cs.demo = (D.demoCases || []).includes(id);
     if (!cs.pool.length) warn('error', `Кейс «${id}» пустой — добавь в него персонажей`);
-    if (cs.pity) {
-      const pr = D.findRarity(cs.pity.rarity);
-      if (!pr) {
-        warn('error', `Кейс «${id}»: в pity неизвестная редкость «${cs.pity.rarity}»`);
-        cs.pity = null;
-      } else if (!cs.pool.some((e) => D._c[e.cid].r.index >= pr.index)) {
-        cs.pity = null;
-      } else cs.pity = { count: Math.max(1, Number(cs.pity.count) || 1), rarity: pr.id };
-    }
     return cs;
   }
 
@@ -286,7 +272,6 @@
   }
 
   /* ============================ Автоцены ============================ */
-  const shinyK = (cs) => 1 + D.shinyChance(cs) * (CFG.shiny.valueMult - 1);
   function niceRound(v) {
     if (v < 1000) return Math.max(1, Math.round(v));
     if (v < 10000) return Math.round(v / 10) * 10;
@@ -297,7 +282,7 @@
   // средний дроп кейса без учёта шайни, который нужен под цену и rtp
   function targetBaseEV(cs, priceCoins) {
     const p = priceCoins != null ? priceCoins : cs.price > 0 ? D.priceInCoins(cs) : ECO().freeCaseValue / cs.rtp;
-    return (cs.rtp * p) / shinyK(cs);
+    return cs.rtp * p;
   }
   // посчитать множитель k для «своих» персонажей кейса; valueOf(cid) — уже известные цены
   function solveK(cs, isOwn, valueOf, priceCoins) {
@@ -375,43 +360,28 @@
     });
     // кейсы с price: 'auto' — цена из среднего дропа
     D.cases.filter((cs) => cs.autoPrice).forEach((cs) => {
-      const ev = D.caseEV(cs);
-      const coins = ev / cs.rtp;
-      cs.price = cs.currency === 'gems' ? Math.max(1, Math.round(coins / (CFG.gemValue || 100))) : niceRound(coins);
+      cs.price = niceRound(D.caseEV(cs) / cs.rtp);
     });
   }
 
   /* ============================ Проверки ============================ */
-  function checkRewardRefs(where, r) {
-    if (!r) return;
-    if (r.tickets) Object.keys(r.tickets).forEach((k) => D._k[k] || warn('warn', `${where}: билеты на несуществующий кейс «${k}»`));
-    if (r.characters)
-      r.characters.forEach((c) => {
-        const id = typeof c === 'string' ? c : c && c.id;
-        if (!D._c[id]) warn('warn', `${where}: несуществующий персонаж «${id}»`);
-      });
-  }
-
   function crossCheck() {
     D.chars.forEach((c) => {
       (c.cases || []).forEach((id) => D._k[id] || warn('warn', `Персонаж «${c.id}» ссылается на несуществующий кейс «${id}»`));
-      if (!c.inCases.length) warn('info', `Персонаж «${c.name}» (${c.id}) не входит ни в один кейс — его можно получить только крафтом или апгрейдом`);
+      if (!c.inCases.length) warn('info', `Персонаж «${c.name}» (${c.id}) не входит ни в один кейс — его можно получить только апгрейдом`);
     });
-    (CFG.dailyRewards || []).forEach((r, i) => checkRewardRefs(`Ежедневная награда, день ${i + 1}`, r));
     for (let l = 2; l <= Math.min(100, CFG.levels.max); l++) {
       try {
-        checkRewardRefs(`Награда за ${l} уровень`, CFG.levels.reward(l, D.levelInfo(l)));
+        CFG.levels.reward(l, D.levelInfo(l));
       } catch (e) {
         warn('error', 'Ошибка в config.levels.reward: ' + e.message);
         break;
       }
     }
-    ((CFG.shop && CFG.shop.tickets) || []).forEach((t) => D._k[t.caseId] || warn('warn', `Магазин: билеты на несуществующий кейс «${t.caseId}»`));
-    (G.promocodes || []).forEach((p) => checkRewardRefs(`Промокод ${p.code}`, p.reward));
-    (G.achievements || []).forEach((a) => checkRewardRefs(`Достижение ${a.id}`, a.reward));
-    const wheel = CFG.games && CFG.games.wheel;
-    if (wheel && wheel.daily) wheel.daily.forEach((p) => checkRewardRefs('Бесплатное колесо', p.reward));
-    if (D.demoCases.length) warn('info', `Демо-персонажи заполняют кейсы: ${D.demoCases.join(', ')}. Добавь в них своих персонажей — демо исчезнут.`);
+    (G.achievements || []).forEach((a) => {
+      if (a.rarity && !D._r[a.rarity]) warn('warn', `Достижение «${a.id}»: неизвестная редкость «${a.rarity}»`);
+    });
+    if (D.demoCases.length) warn('info', `Демо-персонажи заполняют ${D.demoCases.length} ${U.plural(D.demoCases.length, ['кейс', 'кейса', 'кейсов'])}. Добавь в них своих персонажей — демо исчезнут.`);
     if (!D.chars.length) warn('error', 'Нет ни одного персонажа! Добавь их в data/characters.js или в папку characters/');
     if (!D.cases.length) warn('error', 'Нет ни одного кейса! Добавь их в data/cases.js');
   }
@@ -443,30 +413,13 @@
   };
 
   /* ============================ Цены и ценность ============================ */
-  D.value = (cid, shiny) => {
+  D.value = (cid) => {
     const c = D._c[cid];
-    if (!c) return 0;
-    return Math.round(c.value * (shiny ? CFG.shiny.valueMult : 1));
+    return c ? Math.round(c.value) : 0;
   };
-  D.dust = (cid, shiny) => {
-    const c = D._c[cid];
-    if (!c) return 0;
-    if (c.dust != null) return Math.round(c.dust * (shiny ? CFG.shiny.dustMult : 1));
-    return Math.max(1, Math.round(D.value(cid, shiny) * ECO().dustRate));
-  };
-  D.craftCost = (cid) => {
-    const c = D._c[cid];
-    if (!c) return Infinity;
-    if (c.craft != null) return c.craft;
-    return Math.max(1, Math.round(D.value(cid, false) * ECO().craftRate));
-  };
-  D.priceInCoins = (cs) => (cs.currency === 'gems' ? cs.price * (CFG.gemValue || 100) : cs.price);
-  D.shinyChance = (cs) => (cs && cs.shinyChance != null ? cs.shinyChance : CFG.shiny.chance);
-  D.caseEV = (cs) => cs.pool.reduce((s, e) => s + e.chance * (D._c[e.cid].value || 0), 0) * shinyK(cs);
-  D.caseRTP = (cs) => {
-    const p = D.priceInCoins(cs);
-    return p > 0 ? D.caseEV(cs) / p : null;
-  };
+  D.priceInCoins = (cs) => cs.price;
+  D.caseEV = (cs) => cs.pool.reduce((s, e) => s + e.chance * (D._c[e.cid].value || 0), 0);
+  D.caseRTP = (cs) => (cs.price > 0 ? D.caseEV(cs) / cs.price : null);
   D.homeCase = (cid) => {
     const c = D._c[cid];
     return c && c.home ? D._k[c.home] : null;
@@ -487,24 +440,20 @@
   D.byRarity = (rid) => D.chars.filter((c) => c.rarity === rid);
   D.seriesList = () => Array.from(new Set(D.chars.map((c) => c.series).filter(Boolean)));
 
-  // Кейсы «лестницы»: за монеты, не бесплатные, по уровню и цене
-  D.ladder = () =>
-    D.cases
-      .filter((cs) => !cs.hidden && cs.currency === 'coins' && cs.price > 0 && !cs.cooldown)
-      .sort((a, b) => a.requiredLevel - b.requiredLevel || a.price - b.price);
-  // Самый крупный кейс за монеты, доступный на уровне
-  D.bestCaseFor = (level) => {
-    const list = D.ladder().filter((cs) => cs.requiredLevel <= level);
-    return list.reduce((best, cs) => (!best || cs.price > best.price ? cs : best), null);
+  // Платные кейсы, по уровню и цене
+  D.ladder = () => D.cases.filter((cs) => !cs.hidden && cs.price > 0 && !cs.cooldown).sort((a, b) => a.requiredLevel - b.requiredLevel || a.price - b.price);
+  // Уровни, на которых открываются кейсы: [1, 2, 3, …]
+  D.caseLevels = () => Array.from(new Set(D.ladder().map((cs) => cs.requiredLevel))).sort((a, b) => a - b);
+  // Цена «среднего» кейса самого старшего набора, доступного на уровне (по ней считаются опыт и награды)
+  D.tierPrice = (level) => {
+    const lv = D.caseLevels().filter((l) => l <= level).pop();
+    const list = D.ladder().filter((cs) => cs.requiredLevel === lv).map((cs) => cs.price).sort((a, b) => a - b);
+    return list.length ? list[Math.floor((list.length - 1) / 2)] : 100;
   };
-  D.levelInfo = (level) => {
-    const best = D.bestCaseFor(level);
-    return {
-      bestCasePrice: best ? best.price : ECO().scaleBase,
-      bestCase: best,
-      newCases: D.cases.filter((cs) => !cs.hidden && cs.requiredLevel === level),
-    };
-  };
+  D.levelInfo = (level) => ({
+    tierPrice: D.tierPrice(level),
+    newCases: D.cases.filter((cs) => !cs.hidden && cs.requiredLevel === level && level > 1),
+  });
 
   /* ============================ Предпросмотр (Конструктор) ============================ */
   D.previewCase = (raw) => {
@@ -521,11 +470,8 @@
         const c = D._c[e.cid];
         cs.previewValues[c.id] = isOwn(c) ? (k ? niceRound(k * c.r.valueMult) : fallbackValue(c)) : c.value;
       });
-      const ev = cs.pool.reduce((s, e) => s + e.chance * cs.previewValues[e.cid], 0) * shinyK(cs);
-      if (cs.autoPrice) {
-        const coins = ev / cs.rtp;
-        cs.price = cs.currency === 'gems' ? Math.max(1, Math.round(coins / (CFG.gemValue || 100))) : niceRound(coins);
-      }
+      const ev = cs.pool.reduce((s, e) => s + e.chance * cs.previewValues[e.cid], 0);
+      if (cs.autoPrice) cs.price = niceRound(ev / cs.rtp);
       cs.previewEV = ev;
     } catch (e) {
       warn('error', 'Ошибка: ' + e.message);

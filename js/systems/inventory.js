@@ -1,4 +1,4 @@
-/* Инвентарь, коллекция, крафт, профиль */
+/* Инвентарь и коллекция */
 (function () {
   'use strict';
   const App = window.App;
@@ -22,9 +22,10 @@
       if (!index) rebuildIndex();
       return index.get(uid) || null;
     },
-    value: (it) => App.data.value(it.cid, it.shiny),
+    value: (it) => App.data.value(it.cid),
     totalValue: () => App.state.inventory.reduce((s, it) => s + inv.value(it), 0),
     countOf: (cid) => App.state.inventory.reduce((n, it) => n + (it.cid === cid ? 1 : 0), 0),
+    // «хоть раз выбит» — остаётся в коллекции, даже если персонажа продали
     discovered: (cid) => !!(App.state.collection[cid] && App.state.collection[cid].n > 0),
     uniqueCount: () => App.data.chars.reduce((n, c) => n + (inv.discovered(c.id) ? 1 : 0), 0),
     wasFirst: (it) => firstCopies.has(it),
@@ -35,34 +36,33 @@
       const st = App.state;
       const ch = App.data.getChar(cid);
       st.serial = (st.serial || 0) + 1;
-      const item = { uid: U.uid('i'), cid, shiny: !!o.shiny, n: st.serial, t: Date.now(), src: o.source || '', isNew: true, locked: false };
+      const item = { uid: U.uid('i'), cid, n: st.serial, t: Date.now(), src: o.source || '', isNew: true };
       st.inventory.push(item);
       if (index) index.set(item.uid, item);
-      const col = st.collection[cid] || (st.collection[cid] = { n: 0, shiny: 0, first: Date.now() });
-      if (col.n === 0) firstCopies.add(item);
+      const col = st.collection[cid] || (st.collection[cid] = { n: 0, first: Date.now() });
+      const first = col.n === 0;
+      if (first) firstCopies.add(item);
       col.n += 1;
-      if (item.shiny) col.shiny = (col.shiny || 0) + 1;
       App.stats.inc('itemsObtained');
       if (ch) {
         App.stats.inc('rarity_' + ch.rarity);
-        if (ch.r.index >= 2) App.stats.inc('rareOrBetter');
         const v = inv.value(item);
+        App.stats.max('bestDropValue', v);
         const best = st.stats.bestDrop;
-        if (!best || v > best.value) st.stats.bestDrop = { cid, shiny: item.shiny, value: v, t: item.t };
+        if (!best || v > best.value) st.stats.bestDrop = { cid, value: v, t: item.t };
       }
-      if (item.shiny) App.stats.inc('shinyObtained');
-      App.stats.touch('uniqueCharacters');
+      App.stats.touch();
       App.bus.emit('inventory');
       App.store.dirty();
+      if (first) App.collection.check();
       return item;
     },
 
-    // принудительно убрать (апгрейд, контракт)
+    // убрать без продажи (апгрейд)
     remove(uids) {
       const set = new Set(uids);
       const before = App.state.inventory.length;
       App.state.inventory = App.state.inventory.filter((it) => !set.has(it.uid));
-      App.profile.cleanShowcase();
       if (App.state.inventory.length !== before) changed();
     },
 
@@ -71,83 +71,39 @@
       let total = 0;
       let n = 0;
       App.state.inventory = App.state.inventory.filter((it) => {
-        if (set.has(it.uid) && !it.locked) {
-          total += inv.value(it);
-          n++;
-          return false;
-        }
-        return true;
+        if (!set.has(it.uid)) return true;
+        total += inv.value(it);
+        n++;
+        return false;
       });
       if (n) {
-        App.eco.add(total, 'coins');
+        App.eco.add(total);
         App.stats.inc('itemsSold', n);
-        App.stats.inc('coinsFromSales', total);
-        App.profile.cleanShowcase();
         App.sfx.play('coin');
         changed();
       }
       return { n, total };
     },
 
-    // продажа с подтверждением для дорогих персонажей
-    async sellSafe(uids) {
-      const items = uids.map(inv.get).filter((it) => it && !it.locked);
-      if (!items.length) {
-        App.ui.toast('Нечего продавать (закреплённые персонажи не продаются)', 'info');
-        return { n: 0, total: 0 };
-      }
-      const thr = Number(App.settings.confirmSell) || 0;
+    // продажа с подтверждением, если продаём много или что-то редкое (эпическое и выше)
+    async sellSafe(uids, o) {
+      o = o || {};
+      const items = uids.map(inv.get).filter(Boolean);
+      if (!items.length) return { n: 0, total: 0 };
       const total = items.reduce((s, it) => s + inv.value(it), 0);
-      const pricey = thr > 0 ? items.filter((it) => inv.value(it) >= thr) : [];
-      if (pricey.length) {
-        const names = pricey.slice(0, 4).map((it) => U.esc((App.data.getChar(it.cid) || {}).name || '?')).join(', ');
+      const rare = items.filter((it) => {
+        const ch = App.data.getChar(it.cid);
+        return ch && ch.r.index >= 3;
+      });
+      if (!o.noConfirm && (rare.length || items.length > 10)) {
+        const names = rare.slice(0, 3).map((it) => U.esc(App.data.getChar(it.cid).name)).join(', ');
         const ok = await App.ui.confirm(
-          `Продать ${items.length} ${U.plural(items.length, ['персонажа', 'персонажей', 'персонажей'])} за ${App.ui.cur(total)}?<br><span class="muted small">Среди них дорогие: ${names}${pricey.length > 4 ? '…' : ''}</span>`,
+          `Продать ${items.length} ${U.plural(items.length, ['персонажа', 'персонажей', 'персонажей'])} за ${App.ui.cur(total)}?${rare.length ? `<div class="muted small">Среди них редкие: ${names}${rare.length > 3 ? '…' : ''}</div>` : ''}`,
           { ok: 'Продать', title: 'Продажа' }
         );
         if (!ok) return { n: 0, total: 0 };
       }
       return inv.sell(items.map((it) => it.uid));
-    },
-
-    disenchant(uids) {
-      const set = new Set(uids);
-      let total = 0;
-      let n = 0;
-      App.state.inventory = App.state.inventory.filter((it) => {
-        if (set.has(it.uid) && !it.locked) {
-          total += App.data.dust(it.cid, it.shiny);
-          n++;
-          return false;
-        }
-        return true;
-      });
-      if (n) {
-        App.eco.add(total, 'dust');
-        App.stats.inc('itemsDusted', n);
-        App.profile.cleanShowcase();
-        App.sfx.play('gem');
-        changed();
-      }
-      return { n, total };
-    },
-
-    craft(cid) {
-      const ch = App.data.getChar(cid);
-      if (!ch) return null;
-      const cost = App.data.craftCost(cid);
-      if (!App.eco.spend(cost, 'dust')) return null;
-      const item = inv.add(cid, { source: 'craft' });
-      App.stats.inc('crafted');
-      App.ui.dropModal([item], { title: 'Создано из звёздной пыли!', firsts: new Set(inv.wasFirst(item) ? [item.uid] : []) });
-      return item;
-    },
-
-    toggleLock(uid) {
-      const it = inv.get(uid);
-      if (!it) return;
-      it.locked = !it.locked;
-      changed();
     },
 
     markSeen() {
@@ -161,115 +117,65 @@
       if (any) changed();
     },
 
-    // дубликаты: оставляем по одному (приоритет — закреплённые, шайни, старые)
+    // лишние копии: оставляем по одной (самую старую)
     duplicates() {
-      const keep = new Map();
-      const sorted = App.state.inventory.slice().sort((a, b) => (b.locked - a.locked) || (b.shiny - a.shiny) || a.t - b.t);
+      const keep = new Set();
       const dups = [];
-      sorted.forEach((it) => {
-        if (!keep.has(it.cid)) keep.set(it.cid, it);
-        else if (!it.locked) dups.push(it);
-      });
+      App.state.inventory
+        .slice()
+        .sort((a, b) => a.t - b.t)
+        .forEach((it) => {
+          if (!keep.has(it.cid)) keep.add(it.cid);
+          else dups.push(it);
+        });
       return dups;
     },
   };
   App.inv = inv;
 
-  /* ======================= Награды за коллекции кейсов ======================= */
+  /* ======================= Коллекция: награды выдаются сразу ======================= */
   App.collection = {
     caseProgress(cs) {
       const total = cs.pool.length;
       const have = cs.pool.reduce((n, e) => n + (inv.discovered(e.cid) ? 1 : 0), 0);
       return { have, total, pct: total ? have / total : 0, done: total > 0 && have === total };
     },
-    // Награда за полную коллекцию кейса: своя (collectionReward) или по цене и уровню кейса
+    // награда за полный набор кейса: своя (collectionReward) или 15 цен кейса
     reward(cs) {
       if (cs.collectionReward) return cs.collectionReward;
-      if (cs.currency === 'gems' || !cs.price) return { gems: 30 };
-      const coins = cs.price * 10;
-      return { coins: coins >= 1000 ? Math.round(coins / 100) * 100 : coins, gems: 5 + cs.requiredLevel * 2 };
+      const base = cs.price > 0 ? cs.price : App.data.tierPrice(1);
+      const coins = base * 15;
+      return { coins: coins >= 1000 ? Math.round(coins / 100) * 100 : Math.round(coins / 10) * 10 };
     },
     claimed: (cs) => !!App.state.collectionClaims[cs.id],
-    claimable() {
-      return App.data.cases.filter((cs) => !cs.hidden && !App.collection.claimed(cs) && App.collection.caseProgress(cs).done);
-    },
-    /* ---- общий прогресс: все, кого ты хоть раз выбивал ---- */
+    // все, кого можно выбить из кейсов
     total() {
       const all = App.data.chars.filter((c) => c.inCases.length);
       const have = all.filter((c) => inv.discovered(c.id)).length;
       return { have, total: all.length, pct: all.length ? (have / all.length) * 100 : 0 };
     },
+    completedCount: () => App.data.cases.filter((cs) => !cs.hidden && App.collection.caseProgress(cs).done).length,
     milestones() {
       const list = (GAME_DATA.config.collection && GAME_DATA.config.collection.milestones) || [];
       const pct = App.collection.total().pct;
       const got = App.state.collectionMilestones || {};
       return list.map((m) => ({ pct: m.pct, reward: m.reward, done: pct >= m.pct - 1e-9, claimed: !!got[m.pct] }));
     },
-    claimMilestone(pct) {
-      const m = App.collection.milestones().find((x) => x.pct === pct);
-      if (!m || !m.done || m.claimed) return;
-      App.state.collectionMilestones = App.state.collectionMilestones || {};
-      App.state.collectionMilestones[pct] = Date.now();
-      App.eco.grant(m.reward, 'collection', { title: `Собрано ${pct}% коллекции!` });
-      App.fx.confetti();
-      App.bus.emit('badges');
-    },
-    claimableCount() {
-      return App.collection.claimable().length + App.collection.milestones().filter((m) => m.done && !m.claimed).length;
-    },
-    claim(cs) {
-      if (App.collection.claimed(cs) || !App.collection.caseProgress(cs).done) return;
-      App.state.collectionClaims[cs.id] = Date.now();
-      App.eco.grant(App.collection.reward(cs), 'collection', { title: `Коллекция «${U.esc(cs.name)}» собрана!` });
-      App.fx.confetti();
-      App.bus.emit('badges');
-    },
-  };
-
-  /* ======================= Профиль ======================= */
-  App.profile = {
-    maxShowcase: 6,
-    cleanShowcase() {
-      const p = App.state.profile;
-      const before = p.showcase.length;
-      p.showcase = p.showcase.filter((uid) => inv.get(uid));
-      if (p.showcase.length !== before) App.bus.emit('profile');
-    },
-    toggleShowcase(uid) {
-      const p = App.state.profile;
-      const i = p.showcase.indexOf(uid);
-      if (i >= 0) p.showcase.splice(i, 1);
-      else {
-        if (p.showcase.length >= App.profile.maxShowcase) {
-          App.ui.toast(`На витрине максимум ${App.profile.maxShowcase} персонажей`, 'bad');
-          return;
-        }
-        p.showcase.push(uid);
-        App.ui.toast('Добавлено на витрину профиля', 'good');
-      }
+    nextMilestone: () => App.collection.milestones().find((m) => !m.claimed) || null,
+    // проверить новые награды (вызывается, когда выбит новый персонаж)
+    check() {
+      if (!App.features.unlocked('collection')) return;
+      App.data.cases.forEach((cs) => {
+        if (cs.hidden || App.collection.claimed(cs) || !App.collection.caseProgress(cs).done) return;
+        App.state.collectionClaims[cs.id] = Date.now();
+        App.eco.grant(App.collection.reward(cs), { title: `Коллекция «${U.esc(cs.name)}» собрана`, type: 'gold' });
+      });
+      App.collection.milestones().forEach((m) => {
+        if (!m.done || m.claimed) return;
+        App.state.collectionMilestones[m.pct] = Date.now();
+        App.eco.grant(m.reward, { title: `Собрано ${m.pct}% коллекции`, type: 'gold' });
+      });
       App.store.dirty();
-      App.bus.emit('profile');
-    },
-    avatarSrc() {
-      const cid = App.state.profile.avatar;
-      const ch = cid && App.data.getChar(cid);
-      return ch ? App.art.portrait(ch) : null;
-    },
-    avatarHtml(cls) {
-      const p = App.state.profile;
-      const src = App.profile.avatarSrc();
-      const inner = src
-        ? `<img src="${U.esc(src)}" data-cid="${U.esc(p.avatar)}" alt="">`
-        : `<span class="avatar-letter">${U.esc((p.name || '?').trim().charAt(0).toUpperCase() || '?')}</span>`;
-      return `<span class="avatar frame-${U.esc(p.frame || 'none')} ${cls || ''}">${inner}</span>`;
-    },
-    frameUnlocked(f) {
-      const st = App.state;
-      if (st.owned.frames.includes(f.id)) return true;
-      if (!f.price && !f.level && !f.achievement) return true;
-      if (f.level && st.level >= f.level) return true;
-      if (f.achievement && st.achievements[f.achievement]) return true;
-      return false;
     },
   };
 })();

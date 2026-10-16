@@ -7,8 +7,8 @@
  *    characters/<кейс>/<редкость>/<Имя>.png
  *
  *  например:
- *    characters/03-neko/5-legendary/Рем.png
- *    characters/03-neko/1-common/Мэй Татибана.webp
+ *    characters/02-pink-capsule/5-legendary/Рем.png
+ *    characters/02-pink-capsule/1-common/Мэй Татибана.webp
  *
  *  и запускаешь:   node tools/import-characters.js
  *
@@ -16,7 +16,7 @@
  *  На GitHub это делает сборка автоматически при каждой отправке файлов.
  *
  *  Правила:
- *    - папка кейса = id кейса из data/cases.js (номер в начале, «03-», можно не писать);
+ *    - папка кейса = id кейса из data/cases.js (номер в начале, «02-», можно не писать);
  *    - папка редкости = id редкости (common, uncommon, rare, epic, legendary, mythic)
  *      или её название по-русски (обычная, необычная, редкая, эпическая, легендарная, мифическая);
  *    - имя персонажа = имя файла (подчёркивания превращаются в пробелы);

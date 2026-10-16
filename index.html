@@ -3,37 +3,25 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-  <title>WaifuDrop — аниме кейс-симулятор</title>
-  <meta name="description" content="Аниме кейс-симулятор: открывай кейсы, собирай коллекцию аниме-девочек, играй в мини-игры.">
-  <meta name="theme-color" content="#0b0915">
-  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🌸</text></svg>">
+  <title>WaifuDrop</title>
+  <meta name="description" content="Аниме кейс-симулятор: открывай кейсы и собирай коллекцию.">
+  <meta name="theme-color" content="#0e0e13">
+  <link rel="icon" href="assets/ui/coin-64.webp">
   <link rel="stylesheet" href="css/fonts.css">
   <link rel="stylesheet" href="css/base.css">
-  <link rel="stylesheet" href="css/cards.css">
-  <link rel="stylesheet" href="css/pages.css">
+  <link rel="stylesheet" href="css/components.css">
+  <link rel="stylesheet" href="css/cases.css">
+  <link rel="stylesheet" href="css/inventory.css">
+  <link rel="stylesheet" href="css/collection.css">
+  <link rel="stylesheet" href="css/profile.css">
   <link rel="stylesheet" href="css/games.css">
+  <link rel="stylesheet" href="css/dev.css">
 </head>
 <body>
-  <!-- Иконки валют -->
-  <svg width="0" height="0" style="position:absolute" aria-hidden="true" focusable="false">
-    <defs>
-      <linearGradient id="g-coin" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#fff1a8"/><stop offset=".5" stop-color="#fbbf24"/><stop offset="1" stop-color="#d97706"/></linearGradient>
-      <linearGradient id="g-gem" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#cffafe"/><stop offset=".5" stop-color="#22d3ee"/><stop offset="1" stop-color="#6366f1"/></linearGradient>
-      <linearGradient id="g-dust" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#fae8ff"/><stop offset=".5" stop-color="#d8b4fe"/><stop offset="1" stop-color="#9333ea"/></linearGradient>
-    </defs>
-    <symbol id="i-coins" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10.5" fill="url(#g-coin)"/><circle cx="12" cy="12" r="7.6" fill="none" stroke="#b45309" stroke-opacity=".45" stroke-width="1.4"/><path d="M12 7.3l1.45 2.95 3.25.47-2.35 2.29.55 3.24L12 14.72l-2.9 1.53.55-3.24L7.3 10.72l3.25-.47z" fill="#fff8db"/></symbol>
-    <symbol id="i-gems" viewBox="0 0 24 24"><path d="M6 3h12l4.5 6.2L12 21.5 1.5 9.2z" fill="url(#g-gem)"/><path d="M1.5 9.2h21M8 3 6.2 9.2 12 21.5l5.8-12.3L16 3M6.2 9.2 12 3l5.8 6.2" fill="none" stroke="#fff" stroke-opacity=".55" stroke-width="1"/></symbol>
-    <symbol id="i-dust" viewBox="0 0 24 24"><path d="M11 1.5c.8 5.2 2.9 7.7 8.5 8.5-5.6.8-7.7 3.3-8.5 8.5-.8-5.2-2.9-7.7-8.5-8.5 5.6-.8 7.7-3.3 8.5-8.5z" fill="url(#g-dust)"/><path d="M19 14.5c.35 2.2 1.2 3.25 3.5 3.6-2.3.35-3.15 1.4-3.5 3.6-.35-2.2-1.2-3.25-3.5-3.6 2.3-.35 3.15-1.4 3.5-3.6z" fill="#f0abfc"/></symbol>
-  </svg>
-
-  <div id="petals" class="petals" aria-hidden="true"></div>
-
   <div class="app" id="app">
     <aside class="sidebar" id="sidebar"></aside>
-    <div class="sidebar-backdrop" id="sidebarBackdrop"></div>
     <div class="main">
       <header class="topbar" id="topbar"></header>
-      <div class="livefeed" id="livefeed"></div>
       <main class="view" id="view"></main>
     </div>
   </div>
@@ -51,8 +39,6 @@
   <script src="data/demo.js"></script>
   <script src="data/cases.js"></script>
   <script src="data/achievements.js"></script>
-  <script src="data/quests.js"></script>
-  <script src="data/promocodes.js"></script>
 
   <!-- ============ ДВИЖОК ============ -->
   <script src="js/core/utils.js"></script>
@@ -69,33 +55,23 @@
   <script src="js/systems/inventory.js"></script>
   <script src="js/systems/progress.js"></script>
   <script src="js/systems/cases.js"></script>
-  <script src="js/systems/feed.js"></script>
   <script src="js/shell.js"></script>
 
-  <!-- ============ СТРАНИЦЫ ============ -->
+  <!-- ============ РАЗДЕЛЫ ============ -->
   <script src="js/pages/cases.js"></script>
-  <script src="js/pages/home.js"></script>
   <script src="js/pages/inventory.js"></script>
   <script src="js/pages/collection.js"></script>
-  <script src="js/pages/quests.js"></script>
-  <script src="js/pages/shop.js"></script>
   <script src="js/pages/profile.js"></script>
   <script src="js/pages/settings.js"></script>
-  <script src="js/pages/battles.js"></script>
-  <script src="js/pages/upgrade.js"></script>
-  <script src="js/pages/contracts.js"></script>
-  <script src="js/pages/dev.js"></script>
   <script src="js/pages/games.js"></script>
+  <script src="js/pages/upgrade.js"></script>
+  <script src="js/pages/dev.js"></script>
 
   <!-- ============ МИНИ-ИГРЫ ============ -->
   <script src="js/games/crash.js"></script>
+  <script src="js/games/coinflip.js"></script>
   <script src="js/games/roulette.js"></script>
   <script src="js/games/jackpot.js"></script>
-  <script src="js/games/mines.js"></script>
-  <script src="js/games/wheel.js"></script>
-  <script src="js/games/coinflip.js"></script>
-  <script src="js/games/dice.js"></script>
-  <script src="js/games/memory.js"></script>
 
   <script src="js/main.js"></script>
 </body>

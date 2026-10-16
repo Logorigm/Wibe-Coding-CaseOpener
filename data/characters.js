@@ -8,11 +8,11 @@
  *
  *  1) ПРОЩЕ ВСЕГО — картинкой в папку:
  *       characters/<номер-кейс>/<номер-редкость>/<Имя>.png
- *       например: characters/03-neko/5-legendary/Рем.png
+ *       например: characters/02-pink-capsule/5-legendary/Рем.png
  *     Потом запусти  node tools/import-characters.js  (или просто отправь файлы
  *     на GitHub — сборка сделает это сама). Подробнее: characters/README.md
  *
- *  2) В игре: Настройки → «Режим разработчика» → 🛠 Конструктор → «Персонаж».
+ *  2) В игре: Настройки → «Режим разработчика» → Конструктор → «Персонаж».
  *     Заполняешь форму, копируешь готовый код и вставляешь его сюда.
  *
  *  3) Вручную — добавь объект в массив ниже:
@@ -21,16 +21,16 @@
  *      id: 'rem',                           // уникальный id латиницей, без пробелов
  *      name: 'Рем',                         // имя
  *      rarity: 'legendary',                 // common | uncommon | rare | epic | legendary | mythic
- *      cases: ['neko'],                     // в какой кейс (id кейса из data/cases.js). Можно несколько
+ *      cases: ['pink-capsule'],             // в какой кейс (id кейса из data/cases.js). Можно несколько
  *      image: 'assets/characters/rem.png',  // картинка (вертикальная 3:4). Нет картинки — нарисуется заглушка
  *      series: 'Re:Zero',                   // тайтл (необязательно)
  *      description: 'Горничная особняка Розвааля.', // описание (необязательно)
  *      // value: 5000,                      // своя цена продажи (необязательно, иначе считается сама)
  *    },
  *
- *  id кейсов по уровням: novice(1) academy(2) neko(3) festival(4) idol(5) beach(6)
- *  magic(7) cyber(8) moon(9) winter(10) heaven(11) kitsune(12) royal(13) hanami(14)
- *  dragon(15) stars(16) temple(17) pantheon(18) goddess(19) legend(20)
+ *  id кейсов — в data/cases.js (на каждом уровне 3–4 кейса), например:
+ *  уровень 1: tan-suitcase, pink-capsule, crate-05; уровень 2: ribbon-box, mint-case, festive-gift …
+ *  Полный список с уровнями и ценами — в characters/README.md.
  *
  *  Как только в кейсе появляется хотя бы один твой персонаж — демо-персонажи из него исчезают.
  * ========================================================================== */
@@ -38,5 +38,5 @@ window.GAME_DATA = window.GAME_DATA || {};
 
 GAME_DATA.characters = [
   // ⬇ Добавляй своих персонажей сюда. Пример (убери // в начале строк, чтобы включить):
-  // { id: 'rem', name: 'Рем', rarity: 'legendary', cases: ['neko'], image: 'assets/characters/rem.png', series: 'Re:Zero' },
+  // { id: 'rem', name: 'Рем', rarity: 'legendary', cases: ['pink-capsule'], image: 'assets/characters/rem.png', series: 'Re:Zero' },
 ];

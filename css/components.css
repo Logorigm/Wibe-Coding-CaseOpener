@@ -1,0 +1,148 @@
+/* =====================================================================
+   ОБЩИЕ КОМПОНЕНТЫ: монета, редкость, карточка персонажа, рулетка,
+   окна выпадения / персонажа / нового уровня, ставка, выбор персонажей
+   ===================================================================== */
+
+/* ---------- монета ---------- */
+.coin { display: inline-block; width: 1.15em; height: 1.15em; object-fit: contain; flex: none; vertical-align: -0.2em; }
+.coin.big { width: 64px; height: 64px; }
+.cur { display: inline-flex; align-items: center; gap: 0.3em; white-space: nowrap; font-variant-numeric: tabular-nums; }
+.cur b { font-weight: 900; color: var(--text); }
+
+/* ---------- редкость ---------- */
+.rtag { display: inline-flex; align-items: center; gap: 6px; font-size: 12.5px; font-weight: 800; color: var(--rc, var(--muted)); }
+.rtag i { width: 8px; height: 8px; border-radius: 50%; background: var(--rc, var(--muted)); }
+
+/* ---------- карточка персонажа ---------- */
+.grid-cards { display: grid; grid-template-columns: repeat(auto-fill, minmax(132px, 1fr)); gap: 12px; }
+.ccard {
+  --rc: #9aa3b5; position: relative; display: flex; flex-direction: column; min-width: 0; border-radius: 12px; overflow: hidden;
+  background: var(--surface-2); border: 1px solid var(--line); cursor: pointer; transition: transform 0.15s, border-color 0.15s;
+  box-shadow: inset 0 -3px 0 var(--rc);
+}
+.ccard:hover { border-color: var(--line-2); transform: translateY(-2px); }
+.ccard-art { position: relative; aspect-ratio: 3 / 4; overflow: hidden; background: #17171f; }
+.ccard-art img { width: 100%; height: 100%; object-fit: cover; object-position: 50% 20%; user-select: none; }
+.ccard-art::after { content: ''; position: absolute; inset: auto 0 0; height: 40%; background: linear-gradient(transparent, rgba(var(--rc-rgb, 154, 163, 181), 0.22)); pointer-events: none; }
+.ccard-info { padding: 7px 9px 10px; display: flex; flex-direction: column; gap: 2px; }
+.ccard-name { font-weight: 800; font-size: 13.5px; line-height: 1.2; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.ccard-val { font-size: 12.5px; color: var(--muted); }
+.ccard-val .cur b { color: var(--muted); font-weight: 800; }
+.ccard.t4, .ccard.t5 { border-color: rgba(var(--rc-rgb), 0.45); }
+.ccard.t5 { box-shadow: inset 0 -3px 0 var(--rc), 0 0 18px -6px var(--rc); }
+.ccard.sil .ccard-art img { opacity: 0.55; }
+.ccard.sil .ccard-name { color: var(--dim); }
+.ccard.sel { border-color: var(--accent); box-shadow: inset 0 -3px 0 var(--rc), 0 0 0 2px var(--accent); }
+.ccard.dim { opacity: 0.4; }
+.ccard.unknown { cursor: default; }
+.cbadges { position: absolute; top: 6px; right: 6px; display: flex; gap: 4px; align-items: center; }
+.cbadge { display: inline-flex; align-items: center; height: 20px; padding: 0 7px; border-radius: 10px; background: rgba(10, 10, 14, 0.78); font-size: 11.5px; font-weight: 900; }
+.cb-new { width: 10px; height: 10px; padding: 0; border-radius: 50%; background: var(--accent); box-shadow: 0 0 0 3px rgba(var(--accent-rgb), 0.25); }
+.cchance { position: absolute; top: 6px; left: 6px; height: 20px; padding: 0 7px; border-radius: 10px; background: rgba(10, 10, 14, 0.78); font-size: 11.5px; font-weight: 800; line-height: 20px; color: var(--text); }
+.ccard.xs { width: 64px; border-radius: 9px; }
+.ccard.xs .ccard-info { display: none; }
+.ccard.sm .ccard-name { font-size: 12.5px; }
+.ccard.sm .ccard-info { padding: 6px 7px 8px; }
+.ccard.xl { width: 220px; border-radius: 16px; }
+.ccard.xl .ccard-name { font-size: 15px; }
+.ccard.reel { height: 100%; cursor: default; }
+.ccard.reel:hover { transform: none; }
+.ccard.reel .ccard-info { padding: 6px 8px 8px; }
+
+/* ---------- маленькая плашка кейса ---------- */
+.case-thumb { display: flex; flex-direction: column; align-items: center; gap: 6px; width: 104px; text-align: center; font-size: 12.5px; font-weight: 800; }
+.case-thumb img { width: 84px; height: 84px; object-fit: contain; }
+
+/* ---------- рулетка (лента карточек) ---------- */
+.reel { position: relative; overflow: hidden; width: 100%; }
+.reel-h { height: 100%; }
+.reel-track { display: flex; height: 100%; will-change: transform; padding: 8px 0; }
+.reel-cell { height: 100%; }
+.reel-marker { position: absolute; top: 0; bottom: 0; left: 50%; width: 2px; margin-left: -1px; background: var(--accent); box-shadow: 0 0 10px rgba(var(--accent-rgb), 0.8); z-index: 2; }
+.reel-marker::before, .reel-marker::after { content: ''; position: absolute; left: 50%; transform: translateX(-50%); border: 7px solid transparent; }
+.reel-marker::before { top: 0; border-top-color: var(--accent); }
+.reel-marker::after { bottom: 0; border-bottom-color: var(--accent); }
+.reel::before, .reel::after { content: ''; position: absolute; top: 0; bottom: 0; width: 12%; z-index: 1; pointer-events: none; }
+.reel::before { left: 0; background: linear-gradient(90deg, var(--surface), transparent); }
+.reel::after { right: 0; background: linear-gradient(270deg, var(--surface), transparent); }
+.reel.done .reel-cell:not(.win) { opacity: 0.45; transition: opacity 0.3s; }
+.reel-cell.win .ccard { border-color: var(--rc); box-shadow: inset 0 -3px 0 var(--rc), 0 0 22px -4px var(--rc); }
+
+/* ---------- окно выпадения ---------- */
+.drop { display: flex; flex-direction: column; align-items: center; text-align: center; gap: 8px; }
+.drop-card { margin-bottom: 6px; }
+.drop-card .ccard { cursor: default; }
+.drop-name { font-size: 20px; font-weight: 900; }
+.drop-tags { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; justify-content: center; }
+.drop-new { font-size: 12.5px; font-weight: 800; color: var(--accent); }
+.drop-value { font-size: 17px; margin-top: 2px; }
+.drop.multi { align-items: stretch; }
+.drop-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(104px, 1fr)); gap: 10px; }
+.drop-cell { position: relative; }
+.drop-cell.first::after { content: 'новый'; position: absolute; top: 6px; left: 6px; padding: 1px 7px; border-radius: 9px; background: var(--accent); color: var(--accent-ink); font-size: 11px; font-weight: 900; }
+.drop-total { margin-top: 12px; text-align: right; color: var(--muted); }
+
+/* ---------- окно персонажа ---------- */
+.char-detail { display: grid; grid-template-columns: auto minmax(0, 1fr); gap: 22px; align-items: start; }
+.cd-info { display: flex; flex-direction: column; gap: 10px; min-width: 0; }
+.cd-name { font-size: 22px; }
+.cd-series { color: var(--muted); margin-top: -6px; }
+.cd-desc { color: var(--muted); line-height: 1.5; }
+.cd-stats { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+.cd-stats > div { display: flex; flex-direction: column; gap: 2px; padding: 10px 12px; border-radius: 10px; background: var(--surface-2); }
+.cd-stats span { font-size: 12px; color: var(--muted); font-weight: 700; }
+.cd-label { font-size: 12px; color: var(--muted); font-weight: 800; margin-bottom: 6px; text-transform: uppercase; letter-spacing: 0.04em; }
+.cd-where { display: flex; flex-direction: column; gap: 4px; max-height: 220px; overflow-y: auto; }
+.where-row { display: flex; align-items: center; gap: 10px; padding: 6px 8px; border-radius: 10px; background: var(--surface-2); }
+.where-row:hover { background: var(--surface-3); }
+.where-row img { width: 36px; height: 36px; object-fit: contain; }
+.where-row span { flex: 1; font-weight: 700; }
+.where-row b { font-size: 13px; color: var(--muted); }
+.cd-actions { margin-top: 4px; }
+
+/* ---------- новый уровень ---------- */
+.lvlup { display: flex; flex-direction: column; align-items: center; text-align: center; gap: 10px; padding-top: 6px; }
+.lvlup-label { font-size: 13px; font-weight: 800; color: var(--muted); text-transform: uppercase; letter-spacing: 0.08em; }
+.lvlup-num { font-size: 64px; font-weight: 900; line-height: 1; color: var(--accent); }
+.lvlup-reward { font-size: 18px; }
+.lvlup-sec { width: 100%; margin-top: 8px; padding-top: 14px; border-top: 1px solid var(--line); }
+.lvlup-title { font-size: 13px; font-weight: 800; color: var(--muted); margin-bottom: 10px; }
+.lvlup-cases { display: flex; flex-wrap: wrap; justify-content: center; gap: 8px; }
+.lvlup-feature { width: 100%; display: flex; flex-direction: column; gap: 3px; padding: 12px 14px; border-radius: 12px; background: rgba(var(--accent-rgb), 0.1); border: 1px solid rgba(var(--accent-rgb), 0.3); text-align: left; }
+.lvlup-feature span { color: var(--muted); font-size: 13.5px; }
+
+/* ---------- уведомление о достижении ---------- */
+.toast-ach { border-left: 3px solid var(--rc, var(--gold)); }
+.ach-toast { display: flex; flex-direction: column; gap: 2px; width: 100%; }
+.ach-toast small { font-size: 11.5px; font-weight: 800; color: var(--rc); text-transform: uppercase; letter-spacing: 0.04em; }
+.ach-toast b { font-size: 15px; }
+
+/* ---------- ставка (мини-игры) ---------- */
+.bet { display: flex; flex-direction: column; gap: 8px; }
+.bet-label { font-size: 13px; font-weight: 800; color: var(--muted); }
+.bet-input { display: flex; align-items: center; gap: 8px; padding: 0 12px; border-radius: var(--r-sm); background: var(--surface); border: 1px solid var(--line-2); }
+.bet-input:focus-within { border-color: rgba(var(--accent-rgb), 0.7); }
+.bet-input .coin { width: 22px; height: 22px; }
+.bet-input input { flex: 1; min-width: 0; width: 100%; background: none; border: 0; outline: none; color: var(--text); font-weight: 900; font-size: 17px; padding: 10px 0; }
+.bet-quick { display: grid; grid-template-columns: repeat(4, 1fr); gap: 6px; }
+.bet-quick button { height: 32px; border-radius: 8px; border: 1px solid var(--line-2); background: var(--surface-2); color: var(--muted); font-weight: 800; font-size: 13px; }
+.bet-quick button:hover:not(:disabled) { color: var(--text); }
+.bet-quick button:disabled { opacity: 0.4; cursor: not-allowed; }
+
+/* ---------- выбор персонажей из инвентаря ---------- */
+.picker { display: flex; flex-direction: column; gap: 10px; }
+.picker-tools { display: flex; gap: 8px; }
+.picker-tools .input { flex: 1; }
+.picker-tools .select { width: auto; }
+.picker .chips .chip span { display: none; }
+.picker-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(96px, 1fr)); gap: 8px; max-height: 460px; overflow-y: auto; padding: 2px; }
+.picker-empty { grid-column: 1 / -1; padding: 30px 10px; text-align: center; color: var(--muted); }
+.picker-more { display: flex; justify-content: center; }
+
+@media (max-width: 600px) {
+  .grid-cards { grid-template-columns: repeat(auto-fill, minmax(100px, 1fr)); gap: 8px; }
+  .char-detail { grid-template-columns: minmax(0, 1fr); justify-items: center; }
+  .cd-info { width: 100%; }
+  .ccard.xl { width: 190px; }
+  .drop-grid { grid-template-columns: repeat(auto-fill, minmax(88px, 1fr)); gap: 8px; }
+}

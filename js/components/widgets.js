@@ -16,7 +16,7 @@
       case 'old': arr.sort((a, b) => a.t - b.t); break;
       case 'value-desc': arr.sort((a, b) => val(b) - val(a) || b.t - a.t); break;
       case 'value-asc': arr.sort((a, b) => val(a) - val(b) || b.t - a.t); break;
-      case 'rarity-desc': arr.sort((a, b) => tier(b) - tier(a) || b.shiny - a.shiny || val(b) - val(a)); break;
+      case 'rarity-desc': arr.sort((a, b) => tier(b) - tier(a) || val(b) - val(a)); break;
       case 'rarity-asc': arr.sort((a, b) => tier(a) - tier(b) || val(a) - val(b)); break;
       case 'name': arr.sort((a, b) => name(a).localeCompare(name(b), 'ru')); break;
       default: arr.sort((a, b) => b.t - a.t);
@@ -24,19 +24,17 @@
     return arr;
   };
   W.SORTS = [
-    ['new', 'Сначала новые'],
-    ['old', 'Сначала старые'],
+    ['new', 'Новые'],
     ['value-desc', 'Дороже'],
     ['value-asc', 'Дешевле'],
-    ['rarity-desc', 'Редкость ↓'],
-    ['rarity-asc', 'Редкость ↑'],
+    ['rarity-desc', 'Редкие'],
     ['name', 'По имени'],
   ];
   W.sortSelect = (current, attrs) =>
     `<select class="select" ${attrs || ''}>${W.SORTS.map(([v, l]) => `<option value="${v}"${v === current ? ' selected' : ''}>${l}</option>`).join('')}</select>`;
   W.rarityChips = (current, attrs) =>
     `<div class="chips" ${attrs || ''}><button class="chip${current === 'all' ? ' active' : ''}" data-r="all">Все</button>${App.data.rarities
-      .map((r) => `<button class="chip r-${r.id}${current === r.id ? ' active' : ''}" data-r="${r.id}"><i class="dot"></i>${U.esc(r.name)}</button>`)
+      .map((r) => `<button class="chip r-${r.id}${current === r.id ? ' active' : ''}" data-r="${r.id}" title="${U.esc(r.name)}"><i class="dot"></i><span>${U.esc(r.name)}</span></button>`)
       .join('')}</div>`;
 
   /* ---------- поле ставки ---------- */
@@ -47,7 +45,7 @@
     const start = App.state.lastBets[key] || o.default || 100;
     host.innerHTML = `<div class="bet">
       <div class="bet-label">${o.label || 'Ставка'}</div>
-      <label class="bet-input">${App.ui.icon('coins')}<input type="number" inputmode="numeric" min="${G.minBet}" max="${G.maxBet}" step="1" value="${start}"></label>
+      <label class="bet-input">${App.ui.coin()}<input type="number" inputmode="numeric" min="${G.minBet}" max="${G.maxBet}" step="1" value="${start}"></label>
       <div class="bet-quick">
         <button type="button" data-q="min">мин</button>
         <button type="button" data-q="half">½</button>
@@ -148,7 +146,7 @@
             .map((it) => App.ui.card(it, { size: 'sm', selected: o.isSelected && o.isSelected(it.uid), dim: o.isDisabled && o.isDisabled(it), showNew: false }))
             .join('')
         : `<div class="picker-empty">${o.emptyText || 'Нет подходящих персонажей'}</div>`;
-      more.innerHTML = items.length > limit ? `<button class="btn btn-ghost btn-sm" data-more>Показать ещё (${items.length - limit})</button>` : '';
+      more.innerHTML = items.length > limit ? `<button class="btn btn-secondary btn-sm" data-more>Показать ещё (${items.length - limit})</button>` : '';
     }
     host.addEventListener('input', (e) => {
       if (e.target.dataset.f === 'q') {

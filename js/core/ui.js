@@ -1,4 +1,4 @@
-/* Общие элементы интерфейса: тосты, модалки, карточки, валюта, окна выпадения */
+/* Общие элементы интерфейса: иконки, монеты, тосты, окна, карточки, окно выпадения */
 (function () {
   'use strict';
   const App = window.App;
@@ -6,56 +6,54 @@
   const esc = U.esc;
   const ui = (App.ui = {});
 
-  /* ======================= Иконки и валюта ======================= */
-  ui.icon = (name, cls) => `<svg class="ico ${cls || ''}" aria-hidden="true"><use href="#i-${name}"></use></svg>`;
-  ui.cur = (amount, type, o) => {
-    type = type || 'coins';
-    o = o || {};
-    const num = o.short ? U.short(amount) : U.fmt(amount);
-    return `<span class="cur cur-${type}${o.cls ? ' ' + o.cls : ''}">${ui.icon(type)}<b>${o.sign && amount > 0 ? '+' : ''}${num}</b></span>`;
+  /* ======================= Иконки (линейные, цвет = currentColor) ======================= */
+  const ICONS = {
+    cases: '<path d="M3 8l9-5 9 5v8l-9 5-9-5z"/><path d="M3 8l9 5 9-5M12 13v8"/>',
+    inventory: '<rect x="3.5" y="3.5" width="7" height="7" rx="1.5"/><rect x="13.5" y="3.5" width="7" height="7" rx="1.5"/><rect x="3.5" y="13.5" width="7" height="7" rx="1.5"/><rect x="13.5" y="13.5" width="7" height="7" rx="1.5"/>',
+    collection: '<rect x="7" y="3" width="13" height="17" rx="2"/><path d="M4 7v12a2 2 0 0 0 2 2h10"/>',
+    games: '<path d="M7 8h10a4 4 0 0 1 3.9 4.9l-.8 3.5a2.6 2.6 0 0 1-4.4 1.2L14 16h-4l-1.7 1.6a2.6 2.6 0 0 1-4.4-1.2l-.8-3.5A4 4 0 0 1 7 8z"/><path d="M8 11v3M6.5 12.5h3M15.5 11.5h.01M17.5 13.5h.01"/>',
+    profile: '<path d="M8 4h8v5a4 4 0 0 1-8 0zM8 6H4.5v1A3.5 3.5 0 0 0 8 10.5M16 6h3.5v1a3.5 3.5 0 0 1-3.5 3.5M12 13v4M8 21h8M10 17h4v4h-4z"/>',
+    settings: '<circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.5 1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1.1 1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.8.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.8V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z"/>',
+    dev: '<path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.8-3.8a6 6 0 0 1-7.9 7.9l-6.9 6.9a2.1 2.1 0 0 1-3-3l6.9-6.9a6 6 0 0 1 7.9-7.9z"/>',
+    back: '<path d="M15 18l-6-6 6-6"/>',
+    next: '<path d="M9 18l6-6-6-6"/>',
+    close: '<path d="M18 6L6 18M6 6l12 12"/>',
+    lock: '<rect x="5" y="11" width="14" height="10" rx="2"/><path d="M8 11V7a4 4 0 0 1 8 0v4"/>',
+    check: '<path d="M20 6L9 17l-5-5"/>',
+    star: '<path d="M12 3l2.8 5.7 6.2.9-4.5 4.4 1 6.2L12 17.3l-5.5 2.9 1-6.2L3 9.6l6.2-.9z"/>',
+    clock: '<circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/>',
+    gift: '<rect x="3" y="8" width="18" height="4" rx="1"/><path d="M5 12v9h14v-9M12 8v13M12 8C10 4 6.5 4.5 7 7c.3 1 2 1 5 1M12 8c2-4 5.5-3.5 5-1-.3 1-2 1-5 1"/>',
+    up: '<path d="M12 19V5M5 12l7-7 7 7"/>',
+    trend: '<path d="M3 17l6-6 4 4 8-8"/><path d="M14 7h7v7"/>',
+    target: '<circle cx="12" cy="12" r="9"/><circle cx="12" cy="12" r="5"/><circle cx="12" cy="12" r="1"/>',
+    coinflip: '<circle cx="12" cy="12" r="9"/><path d="M12 3v18"/>',
+    slots: '<rect x="3" y="5" width="18" height="14" rx="2"/><path d="M9 5v14M15 5v14"/>',
+    sound: '<path d="M11 5L6 9H3v6h3l5 4z"/><path d="M15.5 8.5a5 5 0 0 1 0 7M18.5 5.5a9 9 0 0 1 0 13"/>',
+    mute: '<path d="M11 5L6 9H3v6h3l5 4z"/><path d="M22 9l-6 6M16 9l6 6"/>',
+    sell: '<path d="M12 2v20M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/>',
   };
-  ui.curName = (type, plural) => {
-    const c = (GAME_DATA.config.currencies || {})[type];
-    if (c) return c.name;
-    return { coins: 'Монеты', gems: 'Кристаллы', dust: 'Звёздная пыль' }[type] || type;
-  };
-  ui.notEnough = (type) => ({ coins: 'Недостаточно монет', gems: 'Недостаточно кристаллов', dust: 'Недостаточно звёздной пыли' }[type] || 'Недостаточно средств');
-  ui.priceTag = (price) => {
-    if (!price) return '';
-    return Object.keys(price).map((k) => ui.cur(price[k], k)).join(' ');
-  };
+  ui.svg = (name, cls) => `<svg class="i ${cls || ''}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${ICONS[name] || ''}</svg>`;
+  ui.hasIcon = (name) => !!ICONS[name];
 
-  ui.rarityTag = (chOrR) => {
+  /* ======================= Монеты ======================= */
+  const COIN = 'assets/ui/coin-64.webp';
+  const COIN_BIG = 'assets/ui/coin-256.webp';
+  ui.coin = (cls) => `<img class="coin ${cls || ''}" src="${cls && cls.includes('big') ? COIN_BIG : COIN}" alt="" draggable="false">`;
+  // ui.cur(сумма, { sign, short, cls }); старый вызов ui.cur(сумма, 'coins', o) тоже работает
+  ui.cur = (amount, a, b) => {
+    const o = (typeof a === 'object' && a) || b || {};
+    const n = Math.round(Number(amount) || 0);
+    const num = o.short ? U.short(n) : U.fmt(n);
+    return `<span class="cur${o.cls ? ' ' + o.cls : ''}">${ui.coin()}<b>${o.sign && n > 0 ? '+' : ''}${num}</b></span>`;
+  };
+  ui.reward = (r) => (r && r.coins ? ui.cur(r.coins, { sign: true }) : '');
+
+  ui.rarityTag = (chOrR, o) => {
     const r = chOrR && chOrR.r ? chOrR.r : chOrR;
     if (!r) return '';
-    return `<span class="rtag r-${r.id}">${esc(r.name)}</span>`;
+    const name = o && o.ach ? r.ach || r.name : r.name;
+    return `<span class="rtag r-${r.id}"><i></i>${esc(name)}</span>`;
   };
-  ui.chance = (p) => U.pct(p);
-
-  /* ======================= Награды ======================= */
-  ui.rewardParts = (r) => {
-    const out = [];
-    if (!r) return out;
-    if (r.coins) out.push(ui.cur(r.coins, 'coins', { sign: true }));
-    if (r.gems) out.push(ui.cur(r.gems, 'gems', { sign: true }));
-    if (r.dust) out.push(ui.cur(r.dust, 'dust', { sign: true }));
-    if (r.xp) out.push(`<span class="cur cur-xp"><i>XP</i><b>+${U.fmt(r.xp)}</b></span>`);
-    if (r.tickets) {
-      Object.keys(r.tickets).forEach((id) => {
-        const cs = App.data.getCase(id);
-        if (cs) out.push(`<span class="cur cur-ticket"><i>🎟️</i><b>${esc(cs.name)} ×${r.tickets[id]}</b></span>`);
-      });
-    }
-    if (r.characters) {
-      r.characters.forEach((c) => {
-        const id = typeof c === 'string' ? c : c && c.id;
-        const ch = App.data.getChar(id);
-        if (ch) out.push(`<span class="cur cur-char r-${ch.rarity}"><i>${c && c.shiny ? '✨' : '👤'}</i><b>${esc(ch.name)}</b></span>`);
-      });
-    }
-    return out;
-  };
-  ui.reward = (r) => `<span class="reward">${ui.rewardParts(r).join('')}</span>`;
 
   /* ======================= Тосты ======================= */
   ui.toast = (html, type, o) => {
@@ -63,25 +61,23 @@
     const root = document.getElementById('toasts');
     if (!root) return () => {};
     const el = document.createElement('div');
-    el.className = `toast toast-${type || 'info'}`;
-    el.innerHTML = `${o.icon ? `<span class="toast-ico">${o.icon}</span>` : ''}<div class="toast-body">${html}</div>`;
+    el.className = `toast toast-${type || 'info'}${o.cls ? ' ' + o.cls : ''}`;
+    el.innerHTML = `<div class="toast-body">${html}</div>`;
     let closed = false;
     const close = () => {
       if (closed) return;
       closed = true;
       el.classList.add('out');
-      setTimeout(() => el.remove(), 300);
+      setTimeout(() => el.remove(), 250);
     };
-    if (o.onClick) {
-      el.classList.add('clickable');
-      el.addEventListener('click', () => {
-        o.onClick();
-        close();
-      });
-    } else el.addEventListener('click', close);
+    el.addEventListener('click', () => {
+      if (o.onClick) o.onClick();
+      close();
+    });
+    if (o.onClick) el.classList.add('clickable');
     root.appendChild(el);
-    while (root.children.length > 5) root.firstElementChild.remove();
-    setTimeout(close, o.timeout || 3500);
+    while (root.children.length > 4) root.firstElementChild.remove();
+    setTimeout(close, o.timeout || 3200);
     return close;
   };
 
@@ -94,9 +90,8 @@
     bg.className = 'modal-bg';
     const closable = opts.closable !== false;
     bg.innerHTML = `<div class="modal ${opts.cls || ''} ${opts.size ? 'modal-' + opts.size : ''}" role="dialog" aria-modal="true">
-      ${opts.title != null
-        ? `<div class="modal-head"><h3>${opts.title}</h3>${closable ? '<button class="modal-x" data-close aria-label="Закрыть">✕</button>' : ''}</div>`
-        : closable ? '<button class="modal-x floating" data-close aria-label="Закрыть">✕</button>' : ''}
+      ${opts.title != null ? `<div class="modal-head"><h3>${opts.title}</h3></div>` : ''}
+      ${closable ? `<button class="modal-x" data-close aria-label="Закрыть">${ui.svg('close')}</button>` : ''}
       <div class="modal-body"></div>
       ${opts.actions && opts.actions.length ? '<div class="modal-foot"></div>' : ''}
     </div>`;
@@ -111,7 +106,7 @@
       bg.classList.add('closing');
       const i = stack.indexOf(m);
       if (i >= 0) stack.splice(i, 1);
-      setTimeout(() => bg.remove(), 220);
+      setTimeout(() => bg.remove(), 180);
       if (!stack.length) document.body.classList.remove('modal-open');
       if (opts.onClose) opts.onClose(result);
     }
@@ -120,7 +115,7 @@
       const foot = modal.querySelector('.modal-foot');
       opts.actions.filter(Boolean).forEach((a) => {
         const b = document.createElement('button');
-        b.className = 'btn ' + (a.cls || 'btn-ghost');
+        b.className = 'btn ' + (a.cls || 'btn-secondary');
         b.innerHTML = a.label;
         b.addEventListener('click', async () => {
           if (b.disabled) return;
@@ -163,7 +158,7 @@
         size: 'sm',
         html: `<div class="confirm-text">${text}</div>`,
         actions: [
-          { label: o.cancel || 'Отмена', cls: 'btn-ghost', onClick: () => { done = true; res(false); } },
+          { label: o.cancel || 'Отмена', cls: 'btn-secondary', onClick: () => { done = true; res(false); } },
           { label: o.ok || 'Да', cls: o.danger ? 'btn-danger' : 'btn-primary', onClick: () => { done = true; res(true); } },
         ],
         onClose: () => { if (!done) res(false); },
@@ -179,7 +174,7 @@
         size: 'sm',
         html: `${o.text ? `<p class="muted">${o.text}</p>` : ''}<input class="input" maxlength="${o.maxLength || 40}" placeholder="${esc(o.placeholder || '')}" value="${esc(value || '')}">`,
         actions: [
-          { label: 'Отмена', cls: 'btn-ghost', onClick: () => { done = true; res(null); } },
+          { label: 'Отмена', cls: 'btn-secondary', onClick: () => { done = true; res(null); } },
           { label: o.ok || 'Сохранить', cls: 'btn-primary', onClick: (mm) => { done = true; res(mm.body.querySelector('input').value.trim()); } },
         ],
         onClose: () => { if (!done) res(null); },
@@ -195,16 +190,14 @@
       });
     });
 
-  /* ======================= Очередь «когда освободишься» ======================= */
-  // Пока идёт анимация (открытие кейса и т.п.), уведомления о новом уровне ждут.
+  /* ======================= «Когда освободишься» ======================= */
+  // Пока идёт анимация (открытие кейса и т.п.), окна нового уровня и достижения ждут.
   let busy = 0;
   const idleQueue = [];
   App.setBusy = (on) => {
     busy = Math.max(0, busy + (on ? 1 : -1));
-    if (!busy) {
-      while (!busy && idleQueue.length) {
-        try { idleQueue.shift()(); } catch (e) { console.error(e); }
-      }
+    while (!busy && idleQueue.length) {
+      try { idleQueue.shift()(); } catch (e) { console.error(e); }
     }
   };
   App.isBusy = () => busy > 0;
@@ -213,10 +206,9 @@
     else idleQueue.push(fn);
   };
 
-  /* ======================= Карточки персонажей ======================= */
-  ui.portrait = (cid) => App.art.portrait(cid);
-
-  // item: предмет инвентаря {uid,cid,shiny,...} или id персонажа
+  /* ======================= Карточка персонажа ======================= */
+  // src: предмет инвентаря {uid,cid,...} или id персонажа
+  // o: { size: xs|sm|md|lg|xl, silhouette, hideValue, count, chance, selected, dim, cls, attrs, badge, showNew }
   ui.card = (src, o) => {
     o = o || {};
     const item = src && typeof src === 'object' ? src : null;
@@ -224,37 +216,28 @@
     const ch = App.data.getChar(cid);
     const size = o.size || 'md';
     if (!ch) {
-      return `<div class="ccard unknown ${size}" ${item ? `data-uid="${esc(item.uid)}"` : ''}><div class="ccard-art"><img src="${App.art.unknown()}" alt=""></div><div class="ccard-info"><div class="ccard-name">Неизвестный</div><div class="ccard-meta"><span class="ccard-rar">удалён из игры</span></div></div></div>`;
+      return `<div class="ccard ${size} unknown"${item ? ` data-uid="${esc(item.uid)}"` : ''}><div class="ccard-art"><img src="${App.art.unknown()}" alt=""></div><div class="ccard-info"><div class="ccard-name">Неизвестный</div></div></div>`;
     }
-    const shiny = o.shiny != null ? o.shiny : !!(item && item.shiny);
     const sil = !!o.silhouette;
-    const cls = ['ccard', 'r-' + ch.rarity, 't' + ch.r.index, size];
-    if (shiny) cls.push('shiny');
-    if (ch.r.rainbow) cls.push('rainbow');
+    const cls = ['ccard', size, 'r-' + ch.rarity, 't' + ch.r.index];
     if (sil) cls.push('sil');
     if (o.selected) cls.push('sel');
     if (o.dim) cls.push('dim');
     if (o.cls) cls.push(o.cls);
-    const value = App.data.value(cid, shiny);
     const badges = [];
-    if (shiny) badges.push('<span class="cbadge cb-shiny" title="Шайни">✨</span>');
-    if (item && item.isNew && o.showNew !== false) badges.push('<span class="cbadge cb-new">NEW</span>');
-    if (item && item.locked) badges.push('<span class="cbadge cb-lock" title="Закреплён">🔒</span>');
+    if (item && item.isNew && o.showNew !== false) badges.push('<span class="cbadge cb-new"></span>');
     if (o.count > 1) badges.push(`<span class="cbadge cb-count">×${o.count}</span>`);
     if (o.badge) badges.push(o.badge);
-    const meta = o.noMeta
-      ? ''
-      : `<div class="ccard-meta"><span class="ccard-rar">${esc(ch.r.name)}</span>${o.hideValue || sil ? '' : `<span class="ccard-val">${ui.cur(value, 'coins', { short: true })}</span>`}</div>`;
+    const img = sil ? App.art.unknown() : App.art.portrait(ch);
     return `<div class="${cls.join(' ')}" data-cid="${esc(cid)}"${item ? ` data-uid="${esc(item.uid)}"` : ''}${o.attrs ? ' ' + o.attrs : ''}>
-<div class="ccard-art"><img src="${esc(App.art.portrait(ch))}" data-cid="${esc(cid)}" alt="" loading="lazy" draggable="false"></div>
-<div class="ccard-shine"></div>
+<div class="ccard-art"><img src="${esc(img)}"${sil ? '' : ` data-cid="${esc(cid)}"`} alt="" loading="lazy" draggable="false"></div>
 ${badges.length ? `<div class="cbadges">${badges.join('')}</div>` : ''}
 ${o.chance != null ? `<span class="cchance">${U.pct(o.chance)}</span>` : ''}
-<div class="ccard-info"><div class="ccard-name">${sil ? '???' : esc(ch.name)}</div>${meta}</div>
+<div class="ccard-info"><div class="ccard-name">${sil ? '???' : esc(ch.name)}</div>${o.hideValue || sil || size === 'xs' ? '' : `<div class="ccard-val">${ui.cur(App.data.value(cid), { short: true })}</div>`}</div>
 </div>`;
   };
 
-  // Если картинка не загрузилась — подставляем сгенерированный портрет
+  // Если картинка персонажа не загрузилась — подставляем заглушку
   document.addEventListener(
     'error',
     (e) => {
@@ -279,9 +262,11 @@ ${o.chance != null ? `<span class="cchance">${U.pct(o.chance)}</span>` : ''}
   ui._imgWarned = {};
 
   ui.caseImg = (cs, cls) => `<img class="${cls || ''}" src="${esc(App.art.caseArt(cs))}" data-case="${esc(cs.id)}" alt="" loading="lazy" draggable="false">`;
+  // маленькая плашка кейса: картинка + название
+  ui.caseThumb = (cs) => `<a class="case-thumb" href="#/case/${esc(cs.id)}" data-close>${ui.caseImg(cs)}<span>${esc(cs.name)}</span></a>`;
 
   ui.empty = (icon, title, text, action) =>
-    `<div class="empty"><div class="empty-ico">${icon}</div><div class="empty-title">${title}</div>${text ? `<div class="empty-text">${text}</div>` : ''}${action || ''}</div>`;
+    `<div class="empty">${icon ? `<div class="empty-ico">${ui.hasIcon(icon) ? ui.svg(icon) : icon}</div>` : ''}<div class="empty-title">${title}</div>${text ? `<div class="empty-text">${text}</div>` : ''}${action || ''}</div>`;
 
   ui.bar = (p, cls) => `<div class="bar ${cls || ''}"><div class="bar-fill" style="width:${U.clamp(p * 100, 0, 100).toFixed(1)}%"></div></div>`;
 
@@ -290,12 +275,12 @@ ${o.chance != null ? `<span class="cchance">${U.pct(o.chance)}</span>` : ''}
     if (!el) return;
     const from = Number(el.dataset.v || 0);
     el.dataset.v = to;
-    if (App.settings.reduceMotion || from === to || ms === 0) {
+    if (from === to || ms === 0) {
       el.textContent = U.fmt(to);
       return;
     }
     const t0 = performance.now();
-    const dur = ms || 600;
+    const dur = ms || 500;
     cancelAnimationFrame(el._raf);
     const step = (now) => {
       const t = Math.min(1, (now - t0) / dur);
@@ -307,50 +292,33 @@ ${o.chance != null ? `<span class="cchance">${U.pct(o.chance)}</span>` : ''}
   };
 
   /* ======================= Новый уровень ======================= */
-  // gained — список полученных уровней (если за раз прыгнули на несколько)
-  ui.levelUp = (level, reward, gained) => {
+  // gained — полученные уровни, features — разделы, которые открылись
+  ui.levelUp = (level, reward, gained, features) => {
     gained = gained && gained.length ? gained : [level];
-    const unlocked = App.data.cases.filter((cs) => !cs.hidden && cs.requiredLevel > 1 && gained.includes(cs.requiredLevel));
+    features = (features || []).filter((f) => f.desc);
+    const cases = App.data.cases.filter((cs) => !cs.hidden && cs.requiredLevel > 1 && gained.includes(cs.requiredLevel));
     ui.whenIdle(() => {
       App.sfx.play('levelup');
-      App.fx.confetti({ count: 160 });
-      const rtp = (cs) => (App.views && App.views.rtp ? App.views.rtp(cs) : null);
-      const main = unlocked.slice().sort((a, b) => App.data.priceInCoins(b) - App.data.priceInCoins(a))[0];
+      App.fx.confetti({ count: 90 });
       ui.modal({
         cls: 'levelup-modal',
         size: 'sm',
         html: `<div class="lvlup">
-          <div class="lvlup-rays"></div>
-          <div class="lvlup-badge"><span>${level}</span></div>
-          <h2>Новый уровень!</h2>
-          <div class="muted">Титул: <b class="grad-text">${esc(App.eco.title(level))}</b></div>
-          <div class="lvlup-reward">${ui.reward(reward)}</div>
-          ${unlocked.length
-            ? `<div class="lvlup-unlock">
-                <div class="lvlup-unlock-title">🔓 ${unlocked.length > 1 ? 'Открыты новые кейсы' : 'Открыт новый кейс'}</div>
-                ${unlocked
-                  .map(
-                    (cs) => `<a class="lvlup-case" href="#/case/${esc(cs.id)}" data-close style="--cc:${esc(cs.color)}">
-                      ${ui.caseImg(cs)}
-                      <div><b>${esc(cs.name)}</b><small>${cs.price > 0 ? ui.cur(cs.price, cs.currency) : 'Бесплатно'}${rtp(cs) != null ? ` · отдача <b class="good">${rtp(cs)}%</b>` : ''}</small></div>
-                    </a>`
-                  )
-                  .join('')}
-              </div>`
-            : ''}
+          <div class="lvlup-label">Новый уровень</div>
+          <div class="lvlup-num">${level}</div>
+          ${reward && reward.coins ? `<div class="lvlup-reward">${ui.cur(reward.coins, { sign: true })}</div>` : ''}
+          ${cases.length ? `<div class="lvlup-sec"><div class="lvlup-title">Новые кейсы</div><div class="lvlup-cases">${cases.map(ui.caseThumb).join('')}</div></div>` : ''}
+          ${features
+            .map((f) => `<div class="lvlup-feature"><b>Открыто: ${esc(f.name)}</b><span>${esc(f.desc)}</span></div>`)
+            .join('')}
         </div>`,
-        actions: main
-          ? [
-              { label: 'Позже', cls: 'btn-ghost' },
-              { label: 'К новому кейсу 🎁', cls: 'btn-primary', onClick: () => App.router.go('case/' + main.id) },
-            ]
-          : [{ label: 'Ура! 🎉', cls: 'btn-primary btn-block' }],
+        actions: [{ label: 'Отлично', cls: 'btn-primary btn-block' }],
       });
     });
   };
 
   /* ======================= Окно выпадения ======================= */
-  // items — предметы инвентаря. opts: { title, again(): void, onClose, firsts: Set(uid) }
+  // items — предметы инвентаря. opts: { title, again(): void, againLabel, onClose, firsts: Set(uid) }
   ui.dropModal = (items, opts) => {
     opts = opts || {};
     items = items.filter(Boolean);
@@ -359,197 +327,98 @@ ${o.chance != null ? `<span class="cchance">${U.pct(o.chance)}</span>` : ''}
       const ch = App.data.getChar(it.cid);
       return ch ? ch.r.index : 0;
     };
-    const best = items.reduce((b, it) => (tierOf(it) > tierOf(b) || (tierOf(it) === tierOf(b) && it.shiny) ? it : b), items[0]);
+    const best = items.reduce((b, it) => (tierOf(it) > tierOf(b) ? it : b), items[0]);
     const bestCh = App.data.getChar(best.cid);
     const firsts = opts.firsts || new Set();
     const single = items.length === 1;
-    const sold = new Set();
-    const alive = () => items.filter((it) => !sold.has(it.uid) && App.inv.get(it.uid));
+    const alive = () => items.filter((it) => App.inv.get(it.uid));
     const totalLeft = () => alive().reduce((s, it) => s + App.inv.value(it), 0);
 
     let html;
     if (single) {
       const ch = bestCh;
-      html = `<div class="drop single r-${ch ? ch.rarity : ''}">
-        <div class="drop-rays"></div>
-        <div class="drop-title">${opts.title || 'Тебе выпала!'}</div>
-        ${firsts.has(best.uid) ? '<div class="drop-new">✦ Новый персонаж в коллекции ✦</div>' : ''}
-        <div class="drop-card">${ui.card(best, { size: 'xl', showNew: false })}</div>
+      html = `<div class="drop single r-${ch ? ch.rarity : 'common'}">
+        <div class="drop-card">${ui.card(best, { size: 'xl', showNew: false, hideValue: true })}</div>
         <div class="drop-name">${ch ? esc(ch.name) : '???'}</div>
-        <div class="drop-tags">${ch ? ui.rarityTag(ch) : ''}${best.shiny ? '<span class="rtag tag-shiny">✨ Шайни</span>' : ''}</div>
-        ${ch && ch.series ? `<div class="drop-series">${esc(ch.series)}</div>` : ''}
+        <div class="drop-tags">${ch ? ui.rarityTag(ch) : ''}${firsts.has(best.uid) ? '<span class="drop-new">Новый в коллекции</span>' : ''}</div>
+        <div class="drop-value">${ui.cur(App.inv.value(best))}</div>
       </div>`;
     } else {
-      html = `<div class="drop multi r-${bestCh ? bestCh.rarity : ''}">
-        <div class="drop-title">${opts.title || 'Твой улов!'}</div>
+      html = `<div class="drop multi">
         <div class="drop-grid">${items
-          .map(
-            (it) => `<div class="drop-cell" data-uid="${esc(it.uid)}">
-              ${firsts.has(it.uid) ? '<span class="drop-cell-new">NEW</span>' : ''}
-              ${ui.card(it, { size: 'md', showNew: false })}
-              <button class="btn btn-xs btn-ghost drop-sell" data-sell="${esc(it.uid)}">${ui.cur(App.inv.value(it))}</button>
-            </div>`
-          )
+          .map((it) => `<div class="drop-cell${firsts.has(it.uid) ? ' first' : ''}">${ui.card(it, { size: 'sm', showNew: false })}</div>`)
           .join('')}</div>
-        <div class="drop-total">Общая стоимость: <b class="drop-total-v">${ui.cur(totalLeft())}</b></div>
+        <div class="drop-total">Всего: ${ui.cur(totalLeft())}</div>
       </div>`;
     }
-    const sellLabel = () => `Продать${single ? '' : ' всё'} за ${ui.cur(totalLeft())}`;
     const m = ui.modal({
       cls: 'drop-modal',
-      size: single ? '' : 'lg',
+      size: single ? 'sm' : 'md',
+      title: opts.title || (single ? 'Выпало' : `Выпало ${items.length}`),
       html,
       actions: [
         {
           id: 'sell',
-          label: sellLabel(),
-          cls: 'btn-gold',
+          label: `Продать за ${ui.cur(totalLeft())}`,
+          cls: 'btn-secondary',
           onClick: async () => {
-            const uids = alive().map((it) => it.uid);
-            const r = await App.inv.sellSafe(uids);
+            const r = await App.inv.sellSafe(alive().map((it) => it.uid), { noConfirm: single });
             if (!r.n) return false;
-            App.ui.toast(`Продано ${r.n} ${U.plural(r.n, ['персонаж', 'персонажа', 'персонажей'])} за ${ui.cur(r.total)}`, 'good');
           },
         },
-        opts.again ? { id: 'again', label: opts.againLabel || 'Ещё раз', cls: 'btn-ghost', onClick: () => { setTimeout(opts.again, 60); } } : null,
+        opts.again ? { id: 'again', label: opts.againLabel || 'Ещё раз', cls: 'btn-secondary', onClick: () => { setTimeout(opts.again, 60); } } : null,
         { id: 'take', label: 'Забрать', cls: 'btn-primary' },
       ],
       onClose: opts.onClose,
     });
-    const refresh = () => {
-      const left = alive();
-      if (m.btn.sell) {
-        m.btn.sell.innerHTML = sellLabel();
-        m.btn.sell.disabled = !left.length;
-      }
-      const tv = m.body.querySelector('.drop-total-v');
-      if (tv) tv.innerHTML = ui.cur(totalLeft());
-    };
-    m.body.addEventListener('click', async (e) => {
-      const b = e.target.closest('[data-sell]');
-      if (b) {
-        const uid = b.dataset.sell;
-        const r = await App.inv.sellSafe([uid]);
-        if (r.n) {
-          sold.add(uid);
-          const cell = b.closest('.drop-cell');
-          cell.classList.add('sold');
-          b.disabled = true;
-          b.textContent = 'Продано';
-          refresh();
-        }
-        return;
-      }
-      const card = e.target.closest('.ccard');
-      if (card && card.dataset.uid && !single) ui.showChar(card.dataset.cid, { uid: card.dataset.uid });
-    });
-    // эффекты
     const tier = bestCh ? bestCh.r.index : 0;
     App.sfx.reveal(tier);
-    if (tier >= 4 || best.shiny) {
-      setTimeout(() => App.fx.confetti({ colors: [bestCh.r.color, '#fff', '#fde68a', bestCh.r.color], count: tier >= 5 ? 220 : 140 }), 120);
-      if (tier >= 5) App.fx.flash(bestCh.r.color);
-    } else if (tier >= 3) {
-      setTimeout(() => App.fx.burstAt(m.body.querySelector('.ccard'), [bestCh.r.color, '#fff'], 40), 150);
-    }
+    if (tier >= 4) setTimeout(() => App.fx.confetti({ colors: [bestCh.r.color, '#ffffff', bestCh.r.color], count: tier >= 5 ? 180 : 110 }), 100);
     return m;
   };
 
-  /* ======================= Карточка персонажа (детали) ======================= */
+  /* ======================= Подробно о персонаже ======================= */
+  // o: { uid } — если открыт конкретный предмет инвентаря
   ui.showChar = (cid, o) => {
     o = o || {};
     const ch = App.data.getChar(cid);
-    if (!ch) return;
-    let item = o.uid ? App.inv.get(o.uid) : null;
-    const discovered = App.inv.discovered(cid);
-    const render = () => {
-      item = o.uid ? App.inv.get(o.uid) : null;
-      const shiny = item ? item.shiny : !!o.shiny;
-      const owned = App.inv.countOf(cid);
-      const col = App.state.collection[cid];
-      const where = ch.inCases
-        .map((id) => {
-          const cs = App.data.getCase(id);
-          const e = cs.pool.find((p) => p.cid === cid);
-          return `<a class="where-row" href="#/case/${esc(cs.id)}" data-close>${ui.caseImg(cs)}<span>${esc(cs.name)}</span><b>${U.pct(e.chance)}</b></a>`;
-        })
-        .join('');
-      const craft = App.data.craftCost(cid);
-      const show = discovered || item;
-      let actions = '';
-      if (item) {
-        const isAvatar = App.state.profile.avatar === cid;
-        const inShowcase = App.state.profile.showcase.includes(item.uid);
-        actions = `
-          <button class="btn btn-gold" data-act="sell" ${item.locked ? 'disabled' : ''}>Продать ${ui.cur(App.inv.value(item))}</button>
-          <button class="btn btn-ghost" data-act="dust" ${item.locked ? 'disabled' : ''}>Распылить ${ui.cur(App.data.dust(cid, item.shiny), 'dust')}</button>
-          <button class="btn btn-ghost" data-act="lock">${item.locked ? '🔓 Открепить' : '🔒 Закрепить'}</button>
-          <button class="btn btn-ghost" data-act="avatar" ${isAvatar ? 'disabled' : ''}>${isAvatar ? '✓ Аватар' : '👤 Сделать аватаром'}</button>
-          <button class="btn btn-ghost" data-act="showcase">${inShowcase ? '✕ Убрать с витрины' : '⭐ На витрину'}</button>`;
-      } else {
-        actions = `<button class="btn btn-primary" data-act="craft">🔮 Создать за ${ui.cur(craft, 'dust')}</button>`;
-        if (owned > 0) actions += `<button class="btn btn-ghost" data-act="inv">🎒 В инвентаре: ${owned}</button>`;
-      }
-      return `<div class="char-detail r-${ch.rarity}">
-        <div class="cd-art">${ui.card(item || cid, { size: 'xl', shiny, silhouette: !show, showNew: false })}</div>
+    if (!ch) return null;
+    const item = o.uid ? App.inv.get(o.uid) : null;
+    const known = App.inv.discovered(cid) || !!item;
+    const owned = App.inv.countOf(cid);
+    const where = ch.inCases
+      .map((id) => App.data.getCase(id))
+      .filter((cs) => cs && !cs.hidden)
+      .map((cs) => {
+        const e = cs.pool.find((p) => p.cid === cid);
+        return `<a class="where-row" href="#/case/${esc(cs.id)}" data-close>${ui.caseImg(cs)}<span>${esc(cs.name)}</span><b>${U.pct(e.chance)}</b></a>`;
+      })
+      .join('');
+    const m = ui.modal({
+      size: 'md',
+      cls: 'char-modal',
+      html: `<div class="char-detail r-${ch.rarity}">
+        <div class="cd-art">${ui.card(item || cid, { size: 'xl', silhouette: !known, hideValue: true, showNew: false })}</div>
         <div class="cd-info">
-          <div class="cd-tags">${ui.rarityTag(ch)}${shiny ? '<span class="rtag tag-shiny">✨ Шайни</span>' : ''}${!show ? '<span class="rtag tag-dim">Не открыта</span>' : ''}</div>
-          <h2 class="cd-name">${show ? esc(ch.name) : '???'}</h2>
-          ${ch.series && show ? `<div class="cd-series">${esc(ch.series)}</div>` : ''}
-          ${ch.description && show ? `<p class="cd-desc">${esc(ch.description)}</p>` : ''}
-          ${!show ? '<p class="cd-desc muted">Этот персонаж ещё не открыт. Выбей её из кейса или создай из звёздной пыли.</p>' : ''}
+          ${ui.rarityTag(ch)}
+          <h2 class="cd-name">${known ? esc(ch.name) : '???'}</h2>
+          ${known && ch.series ? `<div class="cd-series">${esc(ch.series)}</div>` : ''}
+          ${known && ch.description && !ch.demo ? `<p class="cd-desc">${esc(ch.description)}</p>` : ''}
+          ${!known ? '<p class="cd-desc muted">Ещё не выбит. Открывай кейсы ниже, чтобы получить.</p>' : ''}
           <div class="cd-stats">
-            <div><span>Стоимость</span>${ui.cur(App.data.value(cid, shiny))}</div>
-            <div><span>Распыление</span>${ui.cur(App.data.dust(cid, shiny), 'dust')}</div>
-            <div><span>В инвентаре</span><b>${owned} шт.</b></div>
-            <div><span>Всего получено</span><b>${col ? col.n : 0}${col && col.shiny ? ` (✨${col.shiny})` : ''}</b></div>
-            ${item ? `<div><span>Экземпляр</span><b>#${item.n}</b></div><div><span>Получен</span><b>${U.timeAgo(item.t)}</b></div>` : ''}
+            <div><span>Цена</span>${ui.cur(App.data.value(cid))}</div>
+            <div><span>В инвентаре</span><b>${owned}</b></div>
           </div>
-          <div class="cd-where"><div class="cd-label">Где выпадает</div>${where || '<div class="muted small">Не выпадает из кейсов — только крафт, контракты и апгрейд</div>'}</div>
-          <div class="cd-actions">${actions}</div>
+          ${where ? `<div class="cd-where"><div class="cd-label">Выпадает из</div>${where}</div>` : ''}
+          ${item ? `<div class="cd-actions"><button class="btn btn-secondary btn-block" data-act="sell">Продать за ${ui.cur(App.inv.value(item))}</button></div>` : ''}
         </div>
-      </div>`;
-    };
-    const m = ui.modal({ size: 'lg', cls: 'char-modal', html: render() });
-    const rerender = () => {
-      if (!m.closed) m.body.innerHTML = render();
-    };
+      </div>`,
+    });
     m.body.addEventListener('click', async (e) => {
-      const b = e.target.closest('[data-act]');
-      if (!b || b.disabled) return;
-      const act = b.dataset.act;
-      if (act === 'sell' && item) {
-        const r = await App.inv.sellSafe([item.uid]);
-        if (r.n) {
-          ui.toast(`Продано за ${ui.cur(r.total)}`, 'good');
-          m.close();
-        }
-      } else if (act === 'dust' && item) {
-        const r = App.inv.disenchant([item.uid]);
-        if (r.n) {
-          ui.toast(`Получено ${ui.cur(r.total, 'dust')}`, 'good');
-          m.close();
-        }
-      } else if (act === 'lock' && item) {
-        App.inv.toggleLock(item.uid);
-        rerender();
-      } else if (act === 'avatar') {
-        App.state.profile.avatar = cid;
-        App.store.dirty();
-        App.bus.emit('profile');
-        ui.toast('Аватар обновлён', 'good');
-        rerender();
-      } else if (act === 'showcase' && item) {
-        App.profile.toggleShowcase(item.uid);
-        rerender();
-      } else if (act === 'craft') {
-        if (App.inv.craft(cid)) {
-          m.close();
-        }
-      } else if (act === 'inv') {
-        m.close();
-        App.router.go('inventory');
-      }
+      const b = e.target.closest('[data-act="sell"]');
+      if (!b || !item) return;
+      const r = await App.inv.sellSafe([item.uid], { noConfirm: true });
+      if (r.n) m.close();
     });
     return m;
   };

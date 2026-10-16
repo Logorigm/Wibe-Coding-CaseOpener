@@ -1,6 +1,7 @@
 /* Визуальные эффекты: конфетти, искры, вспышки, лепестки сакуры */
 (function () {
   'use strict';
+  const reducedMotion = () => !!(window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches);
   const App = window.App;
   const U = App.utils;
   let canvas = null;
@@ -88,7 +89,7 @@
   App.fx = {
     init,
     enabled() {
-      return !!ctx && App.settings.particles && !App.settings.reduceMotion;
+      return !!ctx && !reducedMotion();
     },
     confetti(o) {
       if (!App.fx.enabled()) return;
@@ -147,7 +148,7 @@
       App.fx.burst(r.left + r.width / 2, r.top + r.height / 2, color, count);
     },
     flash(color) {
-      if (App.settings.reduceMotion) return;
+      if (reducedMotion()) return;
       const d = document.createElement('div');
       d.className = 'fx-flash';
       d.style.background = color || '#fff';
@@ -155,30 +156,11 @@
       setTimeout(() => d.remove(), 700);
     },
     shake(el) {
-      if (!el || App.settings.reduceMotion) return;
+      if (!el || reducedMotion()) return;
       el.classList.remove('fx-shake');
       void el.offsetWidth;
       el.classList.add('fx-shake');
       setTimeout(() => el.classList.remove('fx-shake'), 600);
-    },
-    // Лепестки сакуры на фоне
-    petals(on) {
-      const host = document.getElementById('petals');
-      if (!host) return;
-      host.innerHTML = '';
-      if (!on || App.settings.reduceMotion) return;
-      const n = window.innerWidth < 700 ? 10 : 18;
-      for (let i = 0; i < n; i++) {
-        const p = document.createElement('i');
-        const size = U.randFloat(8, 16);
-        p.style.left = U.randFloat(0, 100) + '%';
-        p.style.width = size + 'px';
-        p.style.height = size * 0.8 + 'px';
-        p.style.animationDuration = U.randFloat(11, 24) + 's, ' + U.randFloat(3, 6) + 's';
-        p.style.animationDelay = -U.randFloat(0, 24) + 's, ' + -U.randFloat(0, 5) + 's';
-        p.style.opacity = U.randFloat(0.25, 0.6);
-        host.appendChild(p);
-      }
     },
   };
 })();

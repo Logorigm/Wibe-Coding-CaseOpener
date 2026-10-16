@@ -25,7 +25,7 @@
       this.items = items;
       const dim = this.vertical ? 'height' : 'width';
       this.track.innerHTML = items
-        .map((it) => `<div class="reel-cell" style="${dim}:${this.size}px;flex:0 0 ${this.size}px">${App.ui.card(it.cid, { size: 'reel', shiny: it.shiny, hideValue: true })}</div>`)
+        .map((it) => `<div class="reel-cell" style="${dim}:${this.size}px;flex:0 0 ${this.size}px">${App.ui.card(it.cid, { size: 'reel', hideValue: true })}</div>`)
         .join('');
       this.cells = Array.from(this.track.children);
       this.host.classList.remove('done', 'spinning');

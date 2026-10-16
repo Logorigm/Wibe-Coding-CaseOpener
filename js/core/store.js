@@ -5,55 +5,37 @@
   const CFG = (window.GAME_DATA && window.GAME_DATA.config) || {};
   const SAVE_KEY = CFG.saveKey || 'waifudrop-save';
   const SETTINGS_KEY = SAVE_KEY + ':settings';
-  const VERSION = 1;
+  const VERSION = 2;
 
   const DEFAULT_SETTINGS = {
     sound: true,
     volume: 0.5,
-    animSpeed: 'normal', // normal | fast | instant
-    particles: true,
-    petals: true,
-    reduceMotion: false,
-    accent: 'sakura',
-    liveFeed: true,
-    confirmSell: 1000, // спрашивать подтверждение при продаже персонажей дороже N (0 — никогда)
+    animSpeed: 'normal', // normal | fast
     devMode: false,
   };
 
   function defaultState() {
     const now = Date.now();
-    const start = CFG.start || {};
     return {
       version: VERSION,
       createdAt: now,
       lastSeen: now,
-      profile: { name: 'Игрок', avatar: null, bio: '', frame: 'none', title: null, showcase: [] },
-      coins: start.coins || 0,
-      gems: start.gems || 0,
-      dust: start.dust || 0,
+      coins: CFG.startCoins || 0,
       xp: 0,
       level: 1,
-      inventory: [],
+      inventory: [], // { uid, cid, n, t, isNew }
       serial: 0,
-      collection: {},
+      collection: {}, // cid -> { n, first } — все, кого ты хоть раз выбивал
       stats: {},
-      achievements: {},
-      quests: null,
-      daily: { last: null, streak: 0 },
-      wheel: { lastFree: null },
+      achievements: {}, // id -> время получения
       cooldowns: {},
-      tickets: {},
-      pity: {},
-      boosts: {},
-      owned: { frames: ['none'] },
-      promo: [],
       history: [],
       limits: {},
       lastBets: {},
       collectionClaims: {},
       collectionMilestones: {},
+      seenFeatures: {}, // какие разделы игрок уже открывал (для отметки «новое»)
       jackpot: null,
-      welcomed: false,
     };
   }
 
@@ -68,10 +50,7 @@
     }
     if (!Array.isArray(s.inventory)) s.inventory = [];
     if (!Array.isArray(s.history)) s.history = [];
-    if (!Array.isArray(s.promo)) s.promo = [];
-    if (!Array.isArray(s.profile.showcase)) s.profile.showcase = [];
-    if (!Array.isArray(s.owned.frames)) s.owned.frames = ['none'];
-    ['coins', 'gems', 'dust', 'xp', 'level'].forEach((k) => {
+    ['coins', 'xp', 'level'].forEach((k) => {
       s[k] = Number(s[k]) || 0;
     });
     if (s.level < 1) s.level = 1;
@@ -153,7 +132,7 @@
     },
     exportSave() {
       App.store.save();
-      return JSON.stringify({ game: CFG.title || 'WaifuDrop', exportedAt: new Date().toISOString(), state: App.state }, null, 1);
+      return JSON.stringify({ game: CFG.title || 'WaifuDrop', exportedAt: new Date().toISOString(), state: App.state });
     },
     importSave(text) {
       let data;

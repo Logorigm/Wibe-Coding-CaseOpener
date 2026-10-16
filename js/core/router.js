@@ -58,14 +58,14 @@
       const parts = h.split('/').filter(Boolean).map((p) => {
         try { return decodeURIComponent(p); } catch (e) { return p; }
       });
-      return { name: parts[0] || 'home', params: parts.slice(1) };
+      return { name: parts[0] || 'cases', params: parts.slice(1) };
     },
     render() {
       let { name, params } = R.parse();
       let def = R.pages[name];
       if (!def) {
-        name = 'home';
-        def = R.pages.home;
+        name = 'cases';
+        def = R.pages.cases;
       }
       if (R.ctx) R.ctx.destroy();
       const view = document.getElementById('view');
@@ -75,17 +75,18 @@
       const ctx = makeCtx(el, params, name);
       R.ctx = ctx;
       R.current = name;
-      const need = def.minLevel ? (typeof def.minLevel === 'function' ? def.minLevel() : def.minLevel) : 0;
-      if (need && App.state.level < need && !App.settings.devMode) {
-        el.innerHTML = `<div class="locked-page panel">
-          <div class="locked-ico">🔒</div>
-          <h2>${def.title || 'Раздел'} откроется на ${need} уровне</h2>
-          <p class="muted">Открывай кейсы, играй в мини-игры и выполняй задания, чтобы получать опыт.</p>
-          ${App.ui.bar(App.state.xp / App.eco.xpNeeded(App.state.level))}
-          <p class="small muted">Сейчас: ${App.state.level} уровень</p>
+      // раздел, который открывается с уровнем (def.feature — id из config.features)
+      const feature = typeof def.feature === 'function' ? def.feature(ctx) : def.feature;
+      if (feature && !App.features.unlocked(feature)) {
+        const f = App.features.get(feature);
+        el.innerHTML = `<div class="locked-page">
+          ${App.ui.svg('lock')}
+          <h2>${App.utils.esc((f && f.name) || def.title || 'Раздел')} — с ${f ? f.level : '?'} уровня</h2>
+          <p class="muted">Открывай кейсы, чтобы получать опыт.</p>
           <a class="btn btn-primary" href="#/cases">К кейсам</a>
         </div>`;
       } else {
+        if (feature) App.features.markSeen(feature);
         try {
           def.render(ctx);
         } catch (e) {
