@@ -295,6 +295,7 @@
           )
           .join('')}
         ${!est.length && o.value == null ? '<p class="small muted">Отметь кейс — цена посчитается от его цены и редкости.</p>' : ''}
+        ${est.some(({ cs }) => cs.demo) ? '<p class="small dim dv-vals-note">Кейс пока заполнен демо. Когда в нём будут только твои персонажи, цены пересчитаются.</p>' : ''}
       </div>`;
   }
   function refreshChar(body) {
@@ -305,9 +306,21 @@
   }
 
   /* ============================== Кейс ============================== */
+  const draftCaseId = () => draft.cs.id.trim() || U.slug(draft.cs.name) || 'new_case';
+  // Демо-персонажи самого этого кейса исчезают, как только в кейсе указаны персонажи (items),
+  // поэтому выбрать их нельзя: иначе кейс после «Добавить для теста» окажется пустым.
+  const ownDemo = (c, caseId) => c.demo && Array.isArray(c.cases) && c.cases.includes(caseId);
+  function pickedItems() {
+    const id = draftCaseId();
+    return draft.cs.items.filter((cid) => {
+      const c = App.data.getChar(cid);
+      return c && !ownDemo(c, id);
+    });
+  }
+
   function caseObj() {
     const d = draft.cs;
-    const o = { id: d.id.trim() || U.slug(d.name) || 'new_case', name: d.name.trim() || 'Новый кейс' };
+    const o = { id: draftCaseId(), name: d.name.trim() || 'Новый кейс' };
     o.requiredLevel = Math.max(1, Math.round(num(d.requiredLevel)) || 1);
     o.price = Math.max(0, Math.round(num(d.price)) || 0);
     const rtp = num(d.rtp);
@@ -322,7 +335,7 @@
       if (v >= 0) w[r.id] = v;
     });
     if (Object.keys(w).length) o.rarityWeights = w;
-    const items = d.extra.concat(d.items.filter((id) => App.data.getChar(id)));
+    const items = d.extra.concat(pickedItems());
     if (items.length) o.items = items;
     return o;
   }
@@ -456,7 +469,7 @@
 
   function itemsCountText() {
     const d = draft.cs;
-    const n = d.items.length;
+    const n = pickedItems().length;
     return `Выбрано: ${n}${d.extra.length ? ` · ещё ${d.extra.length} ${U.plural(d.extra.length, ['правило', 'правила', 'правил'])} из кода` : ''}`;
   }
 
@@ -467,12 +480,17 @@
     const D = App.data;
     const showDemo = pickDemo();
     const q = d.q.trim().toLowerCase();
+    const caseId = draftCaseId();
     pickGroups = {};
     const groups = D.rarities
       .map((r) => ({
         r,
         list: D.chars.filter(
-          (c) => c.rarity === r.id && (showDemo || !c.demo || d.items.includes(c.id)) && (!q || c.name.toLowerCase().includes(q) || c.id.toLowerCase().includes(q))
+          (c) =>
+            c.rarity === r.id &&
+            !ownDemo(c, caseId) &&
+            (showDemo || !c.demo || d.items.includes(c.id)) &&
+            (!q || c.name.toLowerCase().includes(q) || c.id.toLowerCase().includes(q))
         ),
       }))
       .filter((g) => g.list.length);
@@ -494,16 +512,33 @@
       : `<p class="small muted dv-pick-empty">${q ? 'Никого не найдено' : 'Своих персонажей пока нет. Включи «Демо» или добавь персонажей через папку characters/.'}</p>`;
   }
 
+  // Предпросмотр кейса. Если в кейсе указаны персонажи (items), демо-персонажи этого кейса
+  // в игре исчезнут — убираем их и из предпросмотра (на время расчёта, потом возвращаем как было).
+  function previewCase(o) {
+    const D = App.data;
+    const items = o.items || [];
+    const drop = items.length ? D.chars.filter((c) => c.demo && Array.isArray(c.cases) && c.cases.includes(o.id) && !items.includes(c.id)) : [];
+    const saved = drop.map((c) => c.cases);
+    drop.forEach((c) => (c.cases = c.cases.filter((x) => x !== o.id)));
+    try {
+      return D.previewCase(o);
+    } finally {
+      drop.forEach((c, i) => (c.cases = saved[i]));
+    }
+  }
+
   function casePreviewHtml() {
     const D = App.data;
     const d = draft.cs;
     const o = caseObj();
-    const { cs, warnings } = D.previewCase(o);
+    const { cs, warnings } = previewCase(o);
     let ws = warnings.slice();
     if (cs && !cs.pool.length) ws = ws.filter((w) => !/пустой/.test(w.msg));
     if (/[^a-z0-9_-]/i.test(o.id)) ws.unshift({ level: 'warn', msg: 'id лучше писать латиницей без пробелов, например neko-box' });
     if (D.getCase(o.id) && d.from !== o.id) ws.unshift({ level: 'info', msg: `Кейс с id «${o.id}» уже есть — тест заменит его` });
     if (o.price === 0 && !o.cooldown) ws.push({ level: 'warn', msg: 'Бесплатный кейс без перезарядки можно открывать бесконечно' });
+    const demoPicked = pickedItems().filter((id) => D.getChar(id).demo).length;
+    if (demoPicked) ws.push({ level: 'warn', msg: `Выбраны демо-персонажи (${demoPicked}) — они только для проверки и исчезнут, когда в их кейсах появятся твои персонажи` });
 
     const gen = App.art.caseGenerated(cs || o);
     const price = cs ? cs.price : o.price;
@@ -566,7 +601,7 @@
   function renderCheats(body) {
     const st = App.state;
     const cases = sortedCases().filter((cs) => cs.pool.length);
-    if (!S.sim.caseId || !App.data.getCase(S.sim.caseId)) {
+    if (!cases.some((cs) => cs.id === S.sim.caseId)) {
       const first = cases.find((cs) => cs.price > 0) || cases[0];
       S.sim.caseId = first ? first.id : '';
     }
@@ -670,6 +705,7 @@
     App.store.dirty();
     App.bus.emit('levelup', { levels: [], level: st.level, features: [] });
     App.shell.renderNav();
+    App.stats.touch();
     return st.level;
   }
 
@@ -766,7 +802,8 @@
       });
 
       // если картинка из формы не нашлась — показываем заглушку и подсказку
-      el.addEventListener(
+      ctx.listen(
+        el,
         'error',
         (e) => {
           const t = e.target;
@@ -883,10 +920,10 @@
           else if (t.matches('[data-sim-n]')) S.sim.n = Number(t.value) || 10000;
         }
       }
-      el.addEventListener('input', onField);
-      el.addEventListener('change', onField);
+      ctx.listen(el, 'input', onField);
+      ctx.listen(el, 'change', onField);
 
-      el.addEventListener('keydown', (e) => {
+      ctx.listen(el, 'keydown', (e) => {
         if (e.key === 'Enter' && e.target.matches && e.target.matches('[data-level]')) {
           e.preventDefault();
           cheat('level', e.target, body);
@@ -894,7 +931,7 @@
       });
 
       /* ---------- кнопки ---------- */
-      el.addEventListener('click', async (e) => {
+      ctx.listen(el, 'click', async (e) => {
         const t = e.target;
 
         const tb = t.closest('[data-dv-tabs] [data-tab]');
@@ -902,6 +939,8 @@
           if (tb.dataset.tab === S.tab) return;
           S.tab = tb.dataset.tab;
           App.sfx.play('soft');
+          // адрес вкладки — чтобы после перезагрузки открылась она же (hashchange не срабатывает)
+          try { history.replaceState(null, '', '#/dev/' + S.tab); } catch (err) { /* file:// может не дать */ }
           render();
           return;
         }

@@ -76,7 +76,7 @@
     });
     if (o.onClick) el.classList.add('clickable');
     root.appendChild(el);
-    while (root.children.length > 4) root.firstElementChild.remove();
+    while (root.children.length > 3) root.firstElementChild.remove();
     setTimeout(close, o.timeout || 3200);
     return close;
   };

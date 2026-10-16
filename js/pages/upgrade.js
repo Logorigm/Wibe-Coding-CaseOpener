@@ -19,84 +19,36 @@
     render(ctx) {
       const g = App.games.get('upgrade') || { name: 'Апгрейдер' };
       const opt = Object.assign({ houseEdge: 0.05, maxChance: 0.9, maxItems: 8 }, CFG.upgrade);
-      const stake = new Set();
+      const head = App.games.head(g);
+      const stake = new Set(); // uid персонажей в ставке
+      const hidden = new Set(); // выигранный персонаж не показываем в списке, пока крутится стрелка
       let coins = 0;
       let target = null; // id персонажа
       let spinning = false;
+      let empty = false; // сейчас показан экран «нечего ставить»
       let rot = 0;
       let tq = '';
       let tLimit = 60;
       let tab = 'stake';
       let picker = null;
-
-      const head = `${App.games.head(g)}`;
-
-      // Пустой инвентарь — нечего ставить
-      function renderEmpty() {
-        ctx.el.innerHTML = `${head}${ui.empty(
-          'inventory',
-          'Пока нечего ставить',
-          'Апгрейдер превращает твоих персонажей в кого-то подороже. Открой пару кейсов и возвращайся.',
-          '<a class="btn btn-primary" href="#/cases">К кейсам</a>'
-        )}`;
-        App.games.bindHead(ctx.el, g);
-      }
-
-      if (!App.state.inventory.length) return renderEmpty();
-
-      ctx.el.innerHTML = `${head}
-        <div class="up-top">
-          <section class="panel up-col up-stake">
-            <div class="up-col-head"><h3>Ставка</h3><span class="up-count" data-count></span></div>
-            <div class="up-stake-cards" data-stake></div>
-            <label class="up-coins"><span>+ монеты</span><span class="bet-input">${ui.coin()}<input type="number" inputmode="numeric" min="0" step="1" placeholder="0" data-coins></span></label>
-            <div class="up-sum"><span>Сумма</span><b data-stakesum></b></div>
-          </section>
-          <section class="panel up-col up-center">
-            <div class="up-dial" data-dial>
-              <svg viewBox="0 0 220 220" aria-hidden="true">
-                <circle cx="110" cy="110" r="${R}" class="up-track"/>
-                <circle cx="110" cy="110" r="${R}" class="up-arc" data-arc stroke-dasharray="0 ${CIRC.toFixed(1)}" transform="rotate(-90 110 110)"/>
-                <g class="up-pointer" data-pointer><path d="M110 30 L101 6 L119 6 Z"/></g>
-              </svg>
-              <div class="up-dial-center"><b data-chance>0%</b><small>шанс</small></div>
-            </div>
-            <div class="chips up-mults">${MULTS.map((m) => `<button type="button" class="chip" data-mult="${m}">×${m}</button>`).join('')}</div>
-            <button class="btn btn-primary btn-xl btn-block" data-go>Апгрейд</button>
-            <div class="up-hint" data-hint></div>
-          </section>
-          <section class="panel up-col up-target">
-            <div class="up-col-head"><h3>Цель</h3><span class="up-count" data-x></span></div>
-            <div class="up-target-card" data-target></div>
-          </section>
-        </div>
-        <div class="up-lists" data-lists>
-          ${App.widgets.tabs([['stake', 'Мои персонажи'], ['target', 'Цель']], tab, 'data-tabs')}
-          <section class="up-list up-list-stake">
-            <div class="section-head"><h2>Мои персонажи</h2><span class="muted small">до ${opt.maxItems} в ставке</span></div>
-            <div data-picker></div>
-          </section>
-          <section class="up-list up-list-target">
-            <div class="section-head"><h2>Цель</h2><span class="muted small">дороже ставки</span></div>
-            <div class="picker">
-              <div class="picker-tools"><input class="input" placeholder="Поиск по имени…" data-tq></div>
-              <div class="picker-grid" data-targets></div>
-              <div class="picker-more" data-tmore></div>
-            </div>
-          </section>
-        </div>`;
-      App.games.bindHead(ctx.el, g);
-
+      let last = null; // { ch, win } — итог прошлого апгрейда; виден на круге, пока не выбрана новая ставка
       const $ = (s) => ctx.el.querySelector(s);
-      const lists = $('[data-lists]');
-      lists.dataset.tab = tab;
 
+      // пока крутится стрелка, окна нового уровня и достижений ждут; если ушёл со страницы — не ждут
+      let held = false;
+      const hold = (on) => {
+        if (held === on) return;
+        held = on;
+        App.setBusy(on);
+      };
+      ctx.onDestroy(() => hold(false));
+
+      /* ---------- расчёты ---------- */
       const stakeItems = () => Array.from(stake).map((uid) => App.inv.get(uid)).filter(Boolean);
       const stakeValue = () => stakeItems().reduce((s, it) => s + App.inv.value(it), coins);
       const targetValue = () => (target ? App.data.value(target) : 0);
       const chanceFor = (sv, tv) => (tv > 0 && sv > 0 ? Math.min(opt.maxChance, (sv / tv) * (1 - opt.houseEdge)) : 0);
       const chance = () => chanceFor(stakeValue(), targetValue());
-
       // все персонажи дороже ставки, от дешёвых к дорогим
       function candidates() {
         const sv = stakeValue();
@@ -106,21 +58,83 @@
           .sort((a, b) => a.v - b.v || a.c.name.localeCompare(b.c.name, 'ru'));
       }
 
-      const hidden = new Set(); // выигранный персонаж не показываем, пока крутится стрелка
-      picker = App.widgets.itemPicker($('[data-picker]'), {
-        sort: 'value-desc',
-        filter: (it) => !hidden.has(it.uid),
-        emptyText: 'Нет персонажей',
-        isSelected: (uid) => stake.has(uid),
-        isDisabled: () => spinning || stake.size >= opt.maxItems,
-        disabledText: `В ставке может быть до ${opt.maxItems} персонажей`,
-        onToggle: (it) => {
-          if (spinning) return;
-          if (stake.has(it.uid)) stake.delete(it.uid);
-          else if (stake.size < opt.maxItems) stake.add(it.uid);
-          update();
-        },
-      });
+      /* ---------- экраны ---------- */
+      // Пустой инвентарь — нечего ставить
+      function renderEmpty() {
+        empty = true;
+        stake.clear();
+        coins = 0;
+        ctx.el.innerHTML = `${head}${ui.empty(
+          'inventory',
+          'Пока нечего ставить',
+          'Апгрейдер превращает твоих персонажей в кого-то подороже. Открой пару кейсов и возвращайся.',
+          '<a class="btn btn-primary" href="#/cases">К кейсам</a>'
+        )}`;
+        App.games.bindHead(ctx.el, g);
+      }
+
+      function build() {
+        empty = false;
+        tq = '';
+        tLimit = 60;
+        ctx.el.innerHTML = `${head}
+          <div class="up-top">
+            <section class="panel up-col up-stake">
+              <div class="up-col-head"><h3>Ставка</h3><span class="up-count" data-count></span></div>
+              <div class="up-stake-cards" data-stake></div>
+              <label class="up-coins"><span>+ монеты</span><span class="bet-input">${ui.coin()}<input type="number" inputmode="numeric" min="0" step="1" placeholder="0" data-coins></span></label>
+              <div class="up-sum"><span>Сумма</span><b data-stakesum></b></div>
+            </section>
+            <section class="panel up-col up-center">
+              <div class="up-dial" data-dial>
+                <svg viewBox="0 0 220 220" aria-hidden="true">
+                  <circle cx="110" cy="110" r="${R}" class="up-track"/>
+                  <circle cx="110" cy="110" r="${R}" class="up-arc" data-arc stroke-dasharray="0 ${CIRC.toFixed(1)}" transform="rotate(-90 110 110)"/>
+                  <g class="up-pointer" data-pointer><path d="M110 30 L101 6 L119 6 Z"/></g>
+                </svg>
+                <div class="up-dial-center"><b data-chance>0%</b><small>шанс</small></div>
+              </div>
+              <div class="chips up-mults">${MULTS.map((m) => `<button type="button" class="chip" data-mult="${m}">×${m}</button>`).join('')}</div>
+              <button class="btn btn-primary btn-xl btn-block" data-go>Апгрейд</button>
+              <div class="up-hint" data-hint></div>
+            </section>
+            <section class="panel up-col up-target">
+              <div class="up-col-head"><h3>Цель</h3><span class="up-count" data-x></span></div>
+              <div class="up-target-card" data-target></div>
+            </section>
+          </div>
+          <div class="up-lists" data-lists data-tab="${tab}">
+            ${App.widgets.tabs([['stake', 'Мои персонажи'], ['target', 'Цель']], tab, 'data-tabs')}
+            <section class="up-list up-list-stake">
+              <div class="section-head"><h2>Мои персонажи</h2><span class="muted small">до ${opt.maxItems} в ставке</span></div>
+              <div data-picker></div>
+            </section>
+            <section class="up-list up-list-target">
+              <div class="section-head"><h2>Цель</h2><span class="muted small">дороже ставки</span></div>
+              <div class="picker">
+                <div class="picker-tools"><input class="input" placeholder="Поиск по имени…" data-tq></div>
+                <div class="picker-grid" data-targets></div>
+                <div class="picker-more" data-tmore></div>
+              </div>
+            </section>
+          </div>`;
+        App.games.bindHead(ctx.el, g);
+        picker = App.widgets.itemPicker($('[data-picker]'), {
+          sort: 'value-desc',
+          filter: (it) => !hidden.has(it.uid),
+          emptyText: 'Нет персонажей',
+          isSelected: (uid) => stake.has(uid),
+          isDisabled: (it) => spinning || (stake.size >= opt.maxItems && !stake.has(it.uid)),
+          disabledText: `В ставке может быть до ${opt.maxItems} персонажей`,
+          onToggle: (it) => {
+            if (spinning) return;
+            if (stake.has(it.uid)) stake.delete(it.uid);
+            else if (stake.size < opt.maxItems) stake.add(it.uid);
+            update();
+          },
+        });
+        update();
+      }
 
       function renderTargets() {
         const sv = stakeValue();
@@ -136,6 +150,7 @@
       }
 
       function update() {
+        if (empty) return;
         const sv = stakeValue();
         if (target && targetValue() <= sv) target = null;
         const items = stakeItems();
@@ -149,25 +164,29 @@
           ? ui.card(target, { size: 'sm' })
           : `<div class="up-empty">${sv > 0 ? 'Выбери цель или множитель' : 'Сначала выбери ставку'}</div>`;
         $('[data-x]').textContent = target && sv > 0 ? '×' + (tv / sv).toFixed(2) : '';
-        const ch = chance();
+        if (sv > 0) last = null;
+        const ch = last ? last.ch : chance();
         $('[data-chance]').textContent = U.pct(ch, ch > 0 && ch < 0.1 ? 2 : 1);
         $('[data-arc]').setAttribute('stroke-dasharray', `${(ch * CIRC).toFixed(1)} ${CIRC.toFixed(1)}`);
-        const go = $('[data-go]');
-        go.disabled = spinning || !target || sv <= 0;
+        $('[data-go]').disabled = spinning || !target || sv <= 0;
         $('[data-hint]').innerHTML = spinning
           ? 'Крутим…'
+          : last
+          ? `${last.win ? 'Получилось!' : 'Не повезло.'} Выбери новую ставку`
           : sv <= 0
           ? 'Выбери персонажей для ставки'
           : !target
           ? 'Выбери, во что апгрейдить'
           : `Ставка ${ui.cur(sv)} → ${ui.cur(tv)}`;
         ctx.el.querySelectorAll('[data-mult]').forEach((b) => (b.disabled = spinning));
-        if (!spinning && (items.length || coins)) $('[data-dial]').classList.remove('win', 'lose');
+        $('[data-dial]').classList.toggle('win', !!last && last.win);
+        $('[data-dial]').classList.toggle('lose', !!last && !last.win);
         renderTargets();
       }
 
+      /* ---------- апгрейд ---------- */
       async function go() {
-        if (spinning || !target) return;
+        if (spinning || !target || empty) return;
         const items = stakeItems();
         const sv = stakeValue();
         if (sv <= 0) return;
@@ -179,7 +198,7 @@
         const tgt = target;
         const tgtCh = App.data.getChar(tgt);
         spinning = true;
-        App.setBusy(true);
+        hold(true);
         let newItem = null;
         const win = U.rand() < ch;
         try {
@@ -196,10 +215,15 @@
           stake.clear();
           coins = 0;
           $('[data-coins]').value = '';
+          last = null;
           const dial = $('[data-dial]');
           dial.classList.remove('win', 'lose');
+          // стрелку должно быть видно (на телефоне список персонажей ниже, и страница может быть прокручена)
+          const r = dial.getBoundingClientRect();
+          if (r.top < 64 || r.bottom > window.innerHeight) dial.scrollIntoView({ block: 'center', behavior: 'smooth' });
           $('[data-hint]').textContent = 'Крутим…';
           $('[data-go]').disabled = true;
+          ctx.el.querySelectorAll('[data-mult]').forEach((b) => (b.disabled = true));
           picker.refresh();
 
           // стрелка: в зону шанса при победе, мимо — при проигрыше
@@ -215,12 +239,12 @@
           App.sfx.play('whoosh');
           if (dur) {
             const t0 = performance.now();
-            let last = 0;
+            let lastTick = 0;
             const tickLoop = (now) => {
               if (!ctx.alive || now - t0 >= dur) return;
               const p = (now - t0) / dur;
-              if (now - last > 50 + p * p * 260) {
-                last = now;
+              if (now - lastTick > 50 + p * p * 260) {
+                lastTick = now;
                 App.tick(1100);
               }
               requestAnimationFrame(tickLoop);
@@ -231,38 +255,37 @@
         } finally {
           spinning = false;
           hidden.clear();
-          App.setBusy(false);
+          hold(false);
         }
         const name = tgtCh ? esc(tgtCh.name) : 'персонаж';
         if (!ctx.alive) {
           ui.toast(win ? `Апгрейд удался: ${name}` : 'Апгрейд не удался', win ? 'good' : 'bad');
           return;
         }
-        const dial = $('[data-dial]');
-        dial.classList.add(win ? 'win' : 'lose');
+        last = { ch, win };
         if (win) {
           target = null;
           ui.dropModal([newItem], { title: 'Апгрейд удался', firsts: new Set(App.inv.wasFirst(newItem) ? [newItem.uid] : []) });
         } else {
           App.sfx.play('lose');
-          App.fx.shake(dial);
-          ui.toast(`Не повезло. Шанс был ${U.pct(ch, 1)}`, 'bad');
+          App.fx.shake($('[data-dial]'));
         }
-        if (!App.state.inventory.length && !win) {
-          renderEmpty();
-          return;
-        }
+        if (!App.state.inventory.length) return renderEmpty();
         picker.refresh();
         update();
       }
 
       function setTab(t) {
         tab = t;
+        const lists = $('[data-lists]');
+        if (!lists) return;
         lists.dataset.tab = t;
         lists.querySelectorAll('[data-tab]').forEach((b) => b.classList.toggle('active', b.dataset.tab === t));
       }
 
+      /* ---------- события (ctx.el живёт, пока открыта страница) ---------- */
       ctx.el.addEventListener('click', (e) => {
+        if (empty) return;
         const t = e.target;
         if (t.closest('[data-rules]')) return;
         if (t.closest('[data-go]')) return go();
@@ -318,20 +341,24 @@
       ctx.el.addEventListener('change', (e) => {
         if (e.target.matches('[data-coins]')) e.target.value = coins || '';
       });
-      // инвентарь поменялся (например, продажа из окна выпадения)
+      // инвентарь поменялся (продажа из окна выпадения, награда и т.п.)
       ctx.on(
         'inventory',
         U.debounce(() => {
           if (!ctx.alive || spinning) return;
+          if (!App.state.inventory.length) {
+            if (!empty) renderEmpty();
+            return;
+          }
+          if (empty) return build();
           stake.forEach((uid) => App.inv.get(uid) || stake.delete(uid));
-          if (!App.state.inventory.length) return renderEmpty();
-          if (!$('[data-picker]')) return;
           picker.refresh();
           update();
         }, 80)
       );
 
-      update();
+      if (App.state.inventory.length) build();
+      else renderEmpty();
     },
   });
 })();

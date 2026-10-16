@@ -102,9 +102,9 @@
           App.ui.toast(`Максимальная ставка — ${U.fmt(G.maxBet)}`, 'bad');
           return null;
         }
-        if (!App.eco.can(v, 'coins')) {
+        if (!App.eco.can(v)) {
           App.sfx.play('error');
-          App.ui.toast(App.ui.notEnough('coins'), 'bad', { icon: '💸' });
+          App.ui.toast('Недостаточно монет', 'bad');
           return null;
         }
         return v;

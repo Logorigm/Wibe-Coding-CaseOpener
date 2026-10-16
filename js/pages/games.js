@@ -70,6 +70,22 @@
       App.store.dirty();
     },
 
+    // Незавершённый результат (монета/лента/барабаны ещё крутятся) засчитываем один раз:
+    // при уходе со страницы, а также если вкладку закрывают или сворачивают (и сразу сохраняем).
+    // settle должен быть идемпотентным. o.unloadOnly — не засчитывать при сворачивании.
+    guard(ctx, settle, o) {
+      o = o || {};
+      const flush = () => {
+        if (!ctx.alive) return;
+        settle();
+        App.store.save();
+      };
+      ctx.onDestroy(settle);
+      ctx.listen(window, 'pagehide', flush);
+      ctx.listen(window, 'beforeunload', flush);
+      if (!o.unloadOnly) ctx.listen(document, 'visibilitychange', () => document.hidden && flush());
+    },
+
     // Шапка страницы игры: «назад», название и кнопка правил
     head(g) {
       return `<a class="gm-back" href="#/games">${ui.svg('back')}<span>Игры</span></a>
@@ -108,10 +124,14 @@
   App.router.register('games', {
     title: 'Игры',
     nav: 'games',
-    feature: 'upgrade',
+    // Роутер отмечает раздел «просмотренным» до render — поэтому «новые» игры запоминаем здесь, до отметки
+    feature: (ctx) => {
+      ctx.fresh = new Set(App.games.list().filter((g) => App.features.isNew(featureOf(g))).map((g) => g.id));
+      return 'upgrade';
+    },
     render(ctx) {
       const open = App.games.list();
-      const fresh = new Set(open.filter((g) => App.features.isNew(featureOf(g))).map((g) => g.id));
+      const fresh = ctx.fresh || new Set();
       const next = App.games.all().find((g) => !App.features.unlocked(featureOf(g)));
 
       const card = (g) => `<a class="gm-card" href="${esc(App.games.href(g))}">

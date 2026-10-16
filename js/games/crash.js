@@ -79,10 +79,13 @@
         const v = Number(autoInp.value);
         return v >= 1.01 ? v : 0;
       };
+      let palette = null;
       const colors = () => {
+        if (palette) return palette;
         const css = getComputedStyle(document.documentElement);
         const v = (n, d) => css.getPropertyValue(n).trim() || d;
-        return { accent: v('--accent', '#ff5fa2'), good: v('--good', '#3ccf91'), bad: v('--bad', '#ff5f6d'), muted: v('--dim', '#6c6c7c') };
+        palette = { accent: v('--accent', '#ff5fa2'), good: v('--good', '#3ccf91'), bad: v('--bad', '#ff5f6d'), muted: v('--dim', '#6c6c7c') };
+        return palette;
       };
 
       /* ---------- график ---------- */
@@ -196,18 +199,22 @@
         if (state === 'running') el.innerHTML = `Ставка ${ui.cur(stake)}${autoValue() ? ` · автовывод ×${autoValue().toFixed(2)}` : ''}`;
         else el.innerHTML = 'Множитель растёт, пока не обвалится';
       }
+      let btnMode = '';
       function updateBtn() {
-        if (state === 'running') {
-          goBtn.disabled = false;
-          goBtn.className = 'btn btn-gold btn-xl btn-block';
-          goBtn.innerHTML = `Забрать ${ui.cur(Math.floor(stake * m))}`;
-        } else {
-          goBtn.disabled = false;
-          goBtn.className = 'btn btn-primary btn-xl btn-block';
-          goBtn.textContent = 'Запустить';
-        }
-        bet.disable(state === 'running');
-        autoInp.disabled = state === 'running';
+        const running = state === 'running';
+        if (running) {
+          // каждый кадр меняем только сумму, а не всю кнопку
+          if (btnMode !== 'cash') goBtn.innerHTML = `Забрать ${ui.cur(0)}`;
+          const b = goBtn.querySelector('.cur b');
+          if (b) b.textContent = U.fmt(Math.floor(stake * m));
+        } else if (btnMode !== 'start') goBtn.textContent = 'Запустить';
+        const mode = running ? 'cash' : 'start';
+        if (btnMode === mode) return;
+        btnMode = mode;
+        goBtn.disabled = false;
+        goBtn.className = `btn ${running ? 'btn-gold' : 'btn-primary'} btn-xl btn-block`;
+        bet.disable(running);
+        autoInp.disabled = running;
       }
       function renderHist() {
         $('[data-hist]').innerHTML = history
@@ -309,8 +316,20 @@
         renderHist();
       }
 
+      // «Забрать» сейчас: по множителю на этот момент (а не на последний кадр).
+      // Если график к этому моменту уже обвалился — раунд заканчивается так же, как в loop().
+      function cashNow() {
+        if (state !== 'running') return;
+        const cur = multAt(performance.now() - t0);
+        const auto = autoValue();
+        if (cur < crashAt) return cashout(auto && auto <= cur ? auto : cur);
+        m = crashAt;
+        if (auto && auto <= crashAt) cashout(auto);
+        crash();
+      }
+
       goBtn.addEventListener('click', () => {
-        if (state === 'running') cashout();
+        if (state === 'running') cashNow();
         else start();
       });
       autoInp.addEventListener('change', () => {
@@ -327,29 +346,23 @@
       ctx.listen(window, 'resize', U.debounce(resize, 100));
       ctx.onDestroy(() => {
         cancelAnimationFrame(raf);
-        // ушёл со страницы во время роста — забираем по текущему множителю
-        if (state === 'running') {
-          const cur = multAt(performance.now() - t0);
-          if (cur < crashAt) {
-            const auto = autoValue();
-            const at = auto && auto <= cur ? auto : cur;
-            const payout = Math.floor(stake * at);
-            App.eco.add(payout);
-            App.stats.max('crashBest', Math.floor(at * 100) / 100);
-            App.games.record('crash', stake, payout);
-            ui.toast(`Краш: забрал на ×${at.toFixed(2)} — ${ui.cur(payout)}`, 'good');
-          } else {
-            App.games.record('crash', stake, 0);
-            ui.toast(`Краш: обвал на ×${crashAt.toFixed(2)}`, 'bad');
-          }
-          history.unshift(crashAt);
-          state = 'done';
-        } else if (state === 'after') {
-          history.unshift(crashAt);
-        }
+        // ставка уже забрана, график ещё летел — запоминаем точку обвала
+        if (state === 'after') history.unshift(crashAt);
         if (history.length > 30) history.length = 30;
         hold(false);
       });
+      // ушёл со страницы или закрыл вкладку во время роста — забираем по текущему множителю
+      App.games.guard(
+        ctx,
+        () => {
+          if (state !== 'running') return;
+          cashNow();
+          if (ctx.alive) return;
+          if (cashed) ui.toast(`Краш: забрал на ×${cashed.toFixed(2)} — ${ui.cur(Math.floor(stake * cashed))}`, 'good');
+          else ui.toast(`Краш: обвал на ×${crashAt.toFixed(2)}`, 'bad');
+        },
+        { unloadOnly: true }
+      );
 
       requestAnimationFrame(resize);
       renderHist();

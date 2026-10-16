@@ -12,8 +12,8 @@
   const collectable = (cs) => !cs.cooldown && cs.pool.length > 0;
 
   const caseStyle = (cs) => {
-    const color = cs.color || '#ff5fa2';
-    return `--cc:${esc(color)};--cc-rgb:${U.hexToRgb(color).join(',')}`;
+    const rgb = U.hexToRgb(cs.color || '#ff5fa2').join(',');
+    return `--cc:rgb(${rgb});--cc-rgb:${rgb}`;
   };
 
   const pctText = (have, pct) => (have > 0 && pct < 1 ? '<1%' : Math.floor(pct) + '%');

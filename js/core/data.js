@@ -99,7 +99,7 @@
     const add = (raw, source, idx) => {
       if (!raw || typeof raw !== 'object') return;
       if (!raw.id) {
-        warn('error', `Персонаж №${idx + 1} (${source}) без id — пропущен ${U.esc(raw.name || '')}`);
+        warn('error', `Персонаж №${idx + 1} (${source}) без id — пропущен ${raw.name || ''}`);
         return;
       }
       const id = String(raw.id);

@@ -32,6 +32,8 @@
     pool: () => Math.floor(JP.state().pool),
     // доля копилки при такой ставке
     share: (bet) => Math.min(1, bet / JP.fullBet()),
+    // джекпот не меньше, чем три самых дорогих обычных символа (иначе три короны платили бы меньше двух)
+    minMult: () => Math.max(0, ...symbols().filter((s) => !s.jackpot).map((s) => Number(s.x3) || 0)),
     add(amount) {
       JP.state().pool += amount;
       App.store.dirty();
@@ -39,7 +41,7 @@
     // забрать (часть) копилки; копилка не опускается ниже стартовой суммы
     take(bet) {
       const s = JP.state();
-      const win = Math.floor(s.pool * JP.share(bet));
+      const win = Math.max(Math.floor(s.pool * JP.share(bet)), Math.floor(bet * JP.minMult()));
       s.pool = Math.max(s.pool - win, JP.seed());
       s.wins = (s.wins || 0) + 1;
       s.last = { amount: win, at: Date.now() };
@@ -68,7 +70,7 @@
       const jp = jpSymbol();
       return `<p>Выигрыш считается по средней линии: три одинаковых символа — большой множитель, два одинаковых слева — маленький.</p>
         <p>Каждая ставка пополняет копилку на ${U.pct(c.contribution || 0, 0)}. Три ${esc(jp.icon)} забирают копилку:
-        при ставке от ${ui.cur(JP.fullBet())} — целиком, при меньшей — часть, пропорционально ставке.</p>
+        при ставке от ${ui.cur(JP.fullBet())} — целиком, при меньшей — часть, пропорционально ставке${JP.minMult() ? `, но не меньше ставки ×${JP.minMult()}` : ''}.</p>
         <p>Шанс джекпота — примерно 1 к ${U.fmt(jackpotOdds())} за спин.</p>`;
     },
     render(ctx, host) {
@@ -289,8 +291,14 @@
         renderShare();
         if (auto > 0) {
           setAuto(auto - 1);
-          if (auto > 0) ctx.after(App.anim.dur(450, 220) || 150, spin);
+          if (auto > 0) ctx.after(App.anim.dur(450, 220) || 150, autoNext);
         }
+      }
+      // следующий автоспин; пока открыто окно (новый уровень и т.п.) — ждём
+      function autoNext() {
+        if (!auto || pending) return;
+        if (ui.topModal()) return ctx.after(400, autoNext);
+        spin();
       }
 
       host.addEventListener('click', (e) => {
@@ -318,8 +326,8 @@
         cancelAnimationFrame(poolRaf);
         rafs.forEach((r) => cancelAnimationFrame(r));
         auto = 0;
-        if (pending) pending.settle();
       });
+      App.games.guard(ctx, () => pending && pending.settle());
 
       drawStatic();
       renderShare();

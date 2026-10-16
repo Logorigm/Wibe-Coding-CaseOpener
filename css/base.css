@@ -247,7 +247,8 @@ textarea.input { padding: 10px 12px; min-height: 80px; resize: vertical; }
   .tab-item .i { width: 22px; height: 22px; }
   .tab-item .nav-new { position: absolute; top: 9px; left: calc(50% + 10px); margin: 0; }
   .tab-item .nav-badge { position: absolute; top: 5px; left: calc(50% + 6px); margin: 0; height: 17px; min-width: 17px; line-height: 17px; font-size: 10px; padding: 0 4px; }
-  .toasts { top: auto; bottom: calc(var(--tabbar) + 12px + env(safe-area-inset-bottom)); right: 16px; }
+  .toasts { top: auto; bottom: calc(var(--tabbar) + 12px + env(safe-area-inset-bottom)); right: 16px; gap: 6px; }
+  .toast { padding: 9px 12px; font-size: 13.5px; }
   h1 { font-size: 22px; }
 }
 @media (max-width: 520px) {
@@ -258,6 +259,11 @@ textarea.input { padding: 10px 12px; min-height: 80px; resize: vertical; }
   .modal { max-width: none; border-radius: 18px 18px 0 0; max-height: 92vh; }
   .modal-body { padding: 16px; }
   .modal-foot { padding: 0 16px calc(16px + env(safe-area-inset-bottom)); }
+}
+@media (max-width: 360px) {
+  .topbar { gap: 6px; }
+  .balance { padding: 0 10px 0 5px; }
+  .level { min-width: 64px; padding: 0 10px; }
 }
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { animation-duration: 0.01ms !important; transition-duration: 0.01ms !important; }

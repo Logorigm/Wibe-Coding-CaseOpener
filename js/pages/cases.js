@@ -17,8 +17,8 @@
 
   // цвет кейса для мягкой подсветки картинки
   const ccStyle = (cs) => {
-    const color = cs.color || '#ff5fa2';
-    return `--cc:${esc(color)};--cc-rgb:${U.hexToRgb(color).join(',')}`;
+    const rgb = U.hexToRgb(cs.color || '#ff5fa2').join(',');
+    return `--cc:rgb(${rgb});--cc-rgb:${rgb}`;
   };
 
   // «Бесплатно раз в час» / «раз в 2 часа» / «раз в 30 мин»
@@ -50,7 +50,7 @@
     const left = App.cases.cooldownLeft(cs);
     return left > 0
       ? `<span class="gift-timer">${ui.svg('clock')}<span>Через ${U.clock(left)}</span></span>`
-      : '<span class="btn btn-primary btn-sm">Открыть</span>';
+      : `<span class="btn btn-primary btn-sm" data-gift-open="${esc(cs.id)}">Открыть</span>`;
   }
 
   function giftCard(cs, highlight) {
@@ -113,7 +113,10 @@
           .filter((cs) => App.cases.isFree(cs) && !App.cases.isLocked(cs) && cs.pool.length)
           .sort((a, b) => (b.id === 'gift') - (a.id === 'gift'));
       }
+      let giftKey = '';
+      const giftState = () => `${App.stats.get('casesOpened') === 0}|${gifts().map((cs) => cs.id + (App.cases.cooldownLeft(cs) > 0 ? '-' : '+')).join(',')}`;
       function renderGift() {
+        giftKey = giftState();
         const list = gifts();
         const first = App.stats.get('casesOpened') === 0;
         const target = first ? list.find((cs) => App.cases.cooldownLeft(cs) <= 0) : null;
@@ -123,6 +126,7 @@
           : '';
       }
       function tickGift() {
+        if (giftState() !== giftKey) return renderGift();
         giftHost.querySelectorAll('[data-gift]').forEach((card) => {
           const cs = App.data.getCase(card.dataset.gift);
           const act = card.querySelector('[data-gift-act]');
@@ -198,6 +202,12 @@
       renderAll();
 
       ctx.el.addEventListener('click', (e) => {
+        const go = e.target.closest('[data-gift-open]');
+        if (go) {
+          e.preventDefault();
+          App.router.go('case/' + encodeURIComponent(go.dataset.giftOpen) + '/open');
+          return;
+        }
         if (e.target.closest('[data-bank-claim]')) {
           App.eco.claimBankrupt();
           renderBank();
@@ -371,7 +381,8 @@
 
       function updateOverlay() {
         if (!overlay) return;
-        overlay.hidden = !(fresh && !opening && App.cases.check(cs, n()).ok);
+        // подсказка нужна только над лентой: плитки рубашкой вверх понятны и так
+        overlay.hidden = !(fresh && !opening && n() === 1 && App.cases.check(cs, n()).ok);
         stage.classList.toggle('idle', fresh);
       }
 
@@ -476,12 +487,16 @@
           held = false;
           App.setBusy(false);
         };
-        const results = App.cases.open(cs, k);
-        if (!results) {
-          done();
-          updateButton();
-          return;
+        let results = null;
+        try {
+          results = App.cases.open(cs, k);
+        } finally {
+          if (!results) {
+            done();
+            updateButton();
+          }
         }
+        if (!results) return;
         release = done;
         opening = true;
         fresh = false;
@@ -504,23 +519,28 @@
         }
         setSpinning(false);
         const canAgain = App.cases.check(cs, k).ok;
-        const m = ui.dropModal(
-          results.map((r) => r.item),
-          {
-            firsts: new Set(results.filter((r) => r.first).map((r) => r.item.uid)),
-            again: canAgain
-              ? () => {
-                  if (ctx.alive && !opening && !ui.topModal()) doOpen();
-                }
-              : null,
-            againLabel: 'Открыть ещё',
-            onClose: () => {
-              opening = false;
-              done();
-              if (ctx.alive) refresh();
-            },
-          }
-        );
+        let m = null;
+        try {
+          m = ui.dropModal(
+            results.map((r) => r.item),
+            {
+              firsts: new Set(results.filter((r) => r.first).map((r) => r.item.uid)),
+              again: canAgain
+                ? () => {
+                    if (ctx.alive && !opening && !ui.topModal()) doOpen();
+                  }
+                : null,
+              againLabel: 'Открыть ещё',
+              onClose: () => {
+                opening = false;
+                done();
+                if (ctx.alive) refresh();
+              },
+            }
+          );
+        } catch (e) {
+          console.error(e);
+        }
         if (!m) {
           opening = false;
           done();
@@ -614,6 +634,14 @@
       renderControls();
       showMode();
       renderContents();
+
+      // #/case/<id>/open — пришли с кнопки «Открыть» (подарок на главной): сразу открываем
+      if (ctx.params[1] === 'open') {
+        try {
+          history.replaceState(null, '', '#/case/' + encodeURIComponent(cs.id));
+        } catch (e) { /* не страшно */ }
+        if (App.cases.check(cs, n()).ok) ctx.after(App.anim.dur(250, 120), doOpen);
+      }
     },
   });
 })();

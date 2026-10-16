@@ -32,7 +32,7 @@
         <span class="pf-level-xp">${max ? 'Максимальный уровень' : `${U.fmt(st.xp)} / ${U.fmt(need)} опыта`}</span>
       </div>
       ${ui.bar(max ? 1 : st.xp / need)}
-      <p class="pf-hint">Опыт дают открытия кейсов и ставки в играх</p>
+      <p class="pf-hint">${App.features.unlocked('upgrade') ? 'Опыт дают открытия кейсов и ставки в играх' : 'Опыт дают открытия кейсов'}</p>
     </section>`;
   }
 
@@ -76,7 +76,7 @@
       <div class="pf-ach-main">
         <div class="pf-ach-top">
           <b class="pf-ach-name">${secret ? 'Секретное достижение' : esc(def.name)}</b>
-          <span class="pf-ach-reward">${ui.cur(def.reward.coins)}</span>
+          ${def.reward.coins ? `<span class="pf-ach-reward">${ui.cur(def.reward.coins)}</span>` : ''}
         </div>
         <p class="pf-ach-desc">${secret ? 'Откроется само' : esc(def.desc || '')}</p>
         <div class="pf-ach-foot">${ui.rarityTag(def.r, { ach: true })}${foot}</div>
@@ -140,16 +140,34 @@
     nav: 'profile',
     feature: 'profile',
     render(ctx) {
+      // на телефоне фильтры листаются вбок: после перерисовки возвращаем прокрутку
+      // и показываем выбранный фильтр, иначе он уезжает за край
+      function keepChips(fn) {
+        const old = ctx.el.querySelector('.pf-chips');
+        const left = old ? old.scrollLeft : 0;
+        fn();
+        const row = ctx.el.querySelector('.pf-chips');
+        if (!row) return;
+        row.scrollLeft = left;
+        const a = row.querySelector('.chip.active');
+        if (!a) return;
+        const r = row.getBoundingClientRect();
+        const b = a.getBoundingClientRect();
+        if (b.left < r.left) row.scrollLeft += b.left - r.left - 14;
+        else if (b.right > r.right) row.scrollLeft += b.right - r.right + 14;
+      }
       function render() {
-        ctx.el.innerHTML = `
-          <div class="page-head"><div><h1>Профиль</h1></div></div>
-          ${levelHtml()}
-          ${statsHtml()}
-          <section class="section pf-ach-sec">${achHtml()}</section>`;
+        keepChips(() => {
+          ctx.el.innerHTML = `
+            <div class="page-head"><div><h1>Профиль</h1></div></div>
+            ${levelHtml()}
+            ${statsHtml()}
+            <section class="section pf-ach-sec">${achHtml()}</section>`;
+        });
       }
       function renderAch() {
         const sec = ctx.el.querySelector('.pf-ach-sec');
-        if (sec) sec.innerHTML = achHtml();
+        if (sec) keepChips(() => (sec.innerHTML = achHtml()));
         else render();
       }
       render();

@@ -167,13 +167,15 @@ a.gm-card:hover { background: var(--surface-2); border-color: var(--line-2); }
 .page-upgrade .up-col { display: flex; flex-direction: column; gap: 12px; min-width: 0; }
 .page-upgrade .up-col-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
 .page-upgrade .up-count { color: var(--muted); font-size: 13px; font-weight: 800; font-variant-numeric: tabular-nums; }
-.page-upgrade .up-stake-cards { display: flex; flex-wrap: wrap; align-content: flex-start; gap: 6px; min-height: 96px; }
+.page-upgrade .up-stake-cards { flex: 1; display: flex; flex-wrap: wrap; align-content: flex-start; gap: 6px; min-height: 96px; }
+.page-upgrade .up-stake-cards:has(> .up-empty) { align-content: stretch; }
+.page-upgrade .up-target-card > .up-empty { align-self: stretch; }
 .page-upgrade .up-stake-cards .ccard.xs { width: 56px; }
 .page-upgrade .up-empty {
   flex: 1; width: 100%; min-height: 96px; display: grid; place-items: center; padding: 14px; text-align: center;
   border: 1px dashed var(--line-2); border-radius: var(--r-sm); color: var(--dim); font-size: 13.5px;
 }
-.page-upgrade .up-coins { display: flex; flex-direction: column; gap: 6px; margin-top: auto; }
+.page-upgrade .up-coins { display: flex; flex-direction: column; gap: 6px; }
 .page-upgrade .up-coins > span:first-child { font-size: 13px; font-weight: 800; color: var(--muted); }
 .page-upgrade .up-coins input { font-size: 15px; padding: 8px 0; }
 .page-upgrade .up-sum { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding-top: 10px; border-top: 1px solid var(--line); color: var(--muted); font-weight: 700; }
@@ -246,4 +248,8 @@ a.gm-card:hover { background: var(--surface-2); border-color: var(--line-2); }
   .page-upgrade .up-dial { width: 170px; }
   .page-upgrade .up-dial-center b { font-size: 28px; }
   .page-upgrade .up-sum { font-size: 13.5px; }
+}
+@media (max-width: 370px) {
+  .rl-mult-l { display: none; }
+  .rl-sector { padding: 10px 8px; }
 }

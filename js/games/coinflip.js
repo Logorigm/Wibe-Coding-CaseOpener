@@ -159,9 +159,8 @@
         e.preventDefault();
         flip();
       });
-      ctx.onDestroy(() => {
-        if (pending) pending.settle();
-      });
+      // ушёл или закрыл вкладку, пока монета в воздухе, — бросок всё равно засчитывается
+      App.games.guard(ctx, () => pending && pending.settle());
 
       face(history.length ? history[0].side : side);
       renderHist();

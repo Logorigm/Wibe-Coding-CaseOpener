@@ -73,7 +73,7 @@
               .map(
                 (s) => `<button type="button" class="rl-sector" data-place="${esc(s.id)}" style="--sc:${esc(s.color)}">
                   <span class="rl-sec-name"><i class="rl-sw"></i><b>${esc(s.name)}</b></span>
-                  <span class="rl-mult">выплата ×${s.mult}</span>
+                  <span class="rl-mult"><span class="rl-mult-l">выплата </span>×${s.mult}</span>
                   <span class="rl-my" data-my="${esc(s.id)}"></span>
                 </button>`
               )
@@ -256,10 +256,8 @@
       });
       ctx.listen(window, 'resize', U.debounce(() => ctx.alive && draw(), 60));
       // ушёл во время прокрутки — результат всё равно засчитывается
-      ctx.onDestroy(() => {
-        cancelAnimationFrame(raf);
-        if (pending) pending.settle();
-      });
+      ctx.onDestroy(() => cancelAnimationFrame(raf));
+      App.games.guard(ctx, () => pending && pending.settle());
 
       draw();
       requestAnimationFrame(() => ctx.alive && draw());

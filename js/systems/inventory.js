@@ -134,7 +134,11 @@
   App.inv = inv;
 
   /* ======================= Коллекция: награды выдаются сразу ======================= */
+  // наборы коллекции: видимые кейсы со своими персонажами (бесплатный подарок не считается)
+  const collectable = (cs) => !cs.hidden && !cs.cooldown && cs.pool.length > 0;
+
   App.collection = {
+    collectable,
     caseProgress(cs) {
       const total = cs.pool.length;
       const have = cs.pool.reduce((n, e) => n + (inv.discovered(e.cid) ? 1 : 0), 0);
@@ -154,7 +158,7 @@
       const have = all.filter((c) => inv.discovered(c.id)).length;
       return { have, total: all.length, pct: all.length ? (have / all.length) * 100 : 0 };
     },
-    completedCount: () => App.data.cases.filter((cs) => !cs.hidden && App.collection.caseProgress(cs).done).length,
+    completedCount: () => App.data.cases.filter((cs) => collectable(cs) && App.collection.caseProgress(cs).done).length,
     milestones() {
       const list = (GAME_DATA.config.collection && GAME_DATA.config.collection.milestones) || [];
       const pct = App.collection.total().pct;
@@ -166,7 +170,7 @@
     check() {
       if (!App.features.unlocked('collection')) return;
       App.data.cases.forEach((cs) => {
-        if (cs.hidden || App.collection.claimed(cs) || !App.collection.caseProgress(cs).done) return;
+        if (!collectable(cs) || App.collection.claimed(cs) || !App.collection.caseProgress(cs).done) return;
         App.state.collectionClaims[cs.id] = Date.now();
         App.eco.grant(App.collection.reward(cs), { title: `Коллекция «${U.esc(cs.name)}» собрана`, type: 'gold' });
       });

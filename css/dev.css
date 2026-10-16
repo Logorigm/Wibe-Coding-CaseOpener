@@ -126,6 +126,7 @@
 .page-dev .dv-val small { margin-left: 4px; color: var(--accent); font-size: 11.5px; font-weight: 800; }
 .page-dev .dv-val-alt { color: var(--muted); }
 .page-dev .dv-val-alt .cur b { color: var(--muted); }
+.page-dev .dv-vals-note { margin-top: 6px; line-height: 1.45; }
 
 .page-dev .dv-cprev { display: flex; align-items: center; gap: 16px; }
 .page-dev .dv-cprev-img { width: 112px; height: 112px; object-fit: contain; flex: none; }
@@ -159,6 +160,7 @@
 .page-dev .dv-sim-row .dv-sim-n { flex: none; width: 130px; }
 .page-dev .dv-sim-out { display: flex; flex-direction: column; gap: 12px; margin-top: 4px; }
 .page-dev .dv-sim-out:empty { display: none; }
+.page-dev .dv-sim-out .dv-kv { grid-template-columns: repeat(4, minmax(0, 1fr)); }
 .page-dev .dv-best { color: var(--rc); }
 .page-dev .dv-resets { display: flex; flex-direction: column; }
 .page-dev .dv-reset { display: flex; align-items: center; justify-content: space-between; gap: 16px; padding: 12px 0; }
@@ -182,6 +184,7 @@
   .page-dev .dv-cprev-img { width: 88px; height: 88px; }
   .page-dev .dv-pager .btn { padding: 0 10px; }
   .page-dev .dv-case-checks, .page-dev .dv-pick { max-height: 320px; }
+  .page-dev .dv-sim-out .dv-kv { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 }
 @media (max-width: 420px) {
   .page-dev .dv-grid { grid-template-columns: minmax(0, 1fr); }

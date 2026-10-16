@@ -26,10 +26,20 @@
     }
   }
 
-  async function importText(text) {
+  // то же, что проверяет App.store.importSave, — но до вопроса «заменить прогресс?»
+  function looksLikeSave(text) {
+    let data;
     try {
-      JSON.parse(text);
+      data = JSON.parse(text);
     } catch (e) {
+      return false;
+    }
+    const st = data && data.state ? data.state : data;
+    return !!st && typeof st === 'object' && !Array.isArray(st) && 'inventory' in st && 'coins' in st;
+  }
+
+  async function importText(text) {
+    if (!looksLikeSave(text)) {
       ui.toast('Это не похоже на сохранение', 'bad');
       return;
     }
